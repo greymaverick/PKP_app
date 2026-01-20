@@ -4,7 +4,7 @@ import {
   X, LayoutDashboard, Menu, ChevronRight, ChevronDown, 
   Search, ArrowUpDown, Filter, Check, 
   ShieldCheck, Pencil, AlertTriangle, Info, Activity, CheckCircle2, List, FolderOpen, ArrowDownAZ, Printer, Briefcase, PieChart,
-  Cloud, RefreshCw
+  Cloud, RefreshCw, ArrowUp, ArrowDown, Square, CheckSquare
 } from 'lucide-react';
 
 // --- Constants ---
@@ -195,6 +195,16 @@ export default function PKPApp() {
   const [cloudUrl, setCloudUrl] = useState(DEFAULT_CSV_URL);
   const [showCloudModal, setShowCloudModal] = useState(false);
 
+  // Filter & Sort State for Procedures
+  const [procSort, setProcSort] = useState({ key: null, direction: 'asc' });
+  const [procFilters, setProcFilters] = useState({}); // { key: Set(values) }
+  const [activeFilterDropdown, setActiveFilterDropdown] = useState(null); // column key
+  const [filterDropdownPos, setFilterDropdownPos] = useState(null); // { top, left } from button rect
+  
+  // Bank Prosedur Bulk Actions State
+  const [selectedBankProcs, setSelectedBankProcs] = useState(new Set());
+  const [bankSearchTerm, setBankSearchTerm] = useState('');
+
   // Drag and Drop Refs
   const dragItem = useRef(null); // { type: 'procedure', id: procId }
   const backupInputRef = useRef(null);
@@ -274,6 +284,8 @@ export default function PKPApp() {
         nama_akun_1: fd.get('nama_akun_1'),
         kode_akun_2: fd.get('kode_akun_2'),
         nama_akun_2: fd.get('nama_akun_2'),
+        kode_akun_3: fd.get('kode_akun_3'),
+        nama_akun_3: fd.get('nama_akun_3'),
         level: fd.get('level'),
         isheader: fd.get('isheader')
     };
@@ -403,19 +415,22 @@ export default function PKPApp() {
     }
 
     // Skip header (row 0) and map to objects
+    // Mapping sesuai spec:
+    // A=Jenis Laporan, B-C=Akun1, D-E=Akun2, F-G=Akun3, H-I=Prosedur, J=Level, K=Header
     return rows.slice(1).map((row, idx) => {
-        // Mapping as requested
         return {
             id: `pr_cloud_${Date.now()}_${idx}`,
-            jenis_laporan: row[0] || '',
-            kode_akun_1: row[1] || '',
-            nama_akun_1: row[2] || '',
-            kode_akun_2: row[3] || '',
-            nama_akun_2: row[4] || '',
-            code: row[5] || '?', // Kode Prosedur
-            name: row[6] || 'Untitled Procedure', // Uraian Prosedur
-            level: row[7] || '',
-            isheader: row[8] || '0',
+            jenis_laporan: row[0] || '',           // Kolom A
+            kode_akun_1: row[1] || '',             // Kolom B
+            nama_akun_1: row[2] || '',             // Kolom C
+            kode_akun_2: row[3] || '',             // Kolom D
+            nama_akun_2: row[4] || '',             // Kolom E
+            kode_akun_3: row[5] || '',             // Kolom F
+            nama_akun_3: row[6] || '',             // Kolom G
+            code: row[7] || '?',                   // Kolom H - Kode Prosedur
+            name: row[8] || 'Untitled Procedure',  // Kolom I - Uraian Prosedur
+            level: row[9] || '',                   // Kolom J - Level
+            isheader: row[10] || '0',              // Kolom K - Header
             category: row[2] || 'General' 
         };
     });
@@ -495,6 +510,121 @@ export default function PKPApp() {
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleBulkAssign = (examinerId) => {
+    if (!examinerId || selectedBankProcs.size === 0) return;
+
+    setAssignments(prev => {
+        const next = { ...prev };
+        if (!next[examinerId]) next[examinerId] = [];
+        
+        // Add selected IDs to assignment, ensuring uniqueness
+        const currentAssigned = new Set(next[examinerId]);
+        selectedBankProcs.forEach(id => currentAssigned.add(id));
+        
+        next[examinerId] = Array.from(currentAssigned);
+        return next;
+    });
+
+    // Clear selection
+    setSelectedBankProcs(new Set());
+  };
+
+  // --- Filtering & Sorting Logic ---
+  
+  const getProcedureValue = (proc, key) => {
+      switch(key) {
+        case 'akun_1': return `${proc.kode_akun_1} ${proc.nama_akun_1}`.trim();
+        case 'akun_2': return `${proc.kode_akun_2} ${proc.nama_akun_2}`.trim();
+        case 'akun_3': return `${proc.kode_akun_3} ${proc.nama_akun_3}`.trim();
+        case 'prosedur': return `${proc.code} ${proc.name}`.trim();
+        case 'isheader': return (proc.isheader === '1' || proc.isheader === 1 || proc.isheader === 'TRUE') ? 'Ya' : 'Tidak';
+        default: return proc[key] ? String(proc[key]) : '';
+      }
+  };
+
+  const getFilteredProcedures = () => {
+      return procedures.filter(proc => {
+          return Object.entries(procFilters).every(([key, allowedValues]) => {
+              if (!allowedValues || allowedValues.size === 0) return true;
+              const val = getProcedureValue(proc, key);
+              return allowedValues.has(val);
+          });
+      }).sort((a, b) => {
+          if (!procSort.key) return 0;
+          const valA = getProcedureValue(a, procSort.key).toLowerCase();
+          const valB = getProcedureValue(b, procSort.key).toLowerCase();
+          
+          if (valA < valB) return procSort.direction === 'asc' ? -1 : 1;
+          if (valA > valB) return procSort.direction === 'asc' ? 1 : -1;
+          return 0;
+      });
+  };
+
+  const getFilterOptions = (columnKey) => {
+    // Interconnected filtering: Options shown based on OTHER active filters
+    const otherFilters = { ...procFilters };
+    delete otherFilters[columnKey];
+
+    const relevantProcedures = procedures.filter(proc => {
+        return Object.entries(otherFilters).every(([key, allowedValues]) => {
+            if (!allowedValues || allowedValues.size === 0) return true;
+            const val = getProcedureValue(proc, key);
+            return allowedValues.has(val);
+        });
+    });
+
+    const values = new Set();
+    relevantProcedures.forEach(proc => {
+        values.add(getProcedureValue(proc, columnKey));
+    });
+    return Array.from(values).sort();
+  };
+
+  const toggleFilter = (columnKey, value) => {
+      setProcFilters(prev => {
+          const next = { ...prev };
+          if (!next[columnKey]) next[columnKey] = new Set(getFilterOptions(columnKey)); // Initialize with all logic if needed, but here we assume "all selected" means undefined or set matches all.
+          // Wait, logic: "Select All" checked = fileter undefined/null.
+          // User uncheck one item -> filter becomes "All except one".
+          
+          // Better logic: 
+          // If filter exists, toggle value.
+          // If filter doesn't exist (showing all), initialize it with ALL options minus the one being toggled off.
+          
+          const titleMap = new Set(next[columnKey] || getFilterOptions(columnKey));
+          
+          if (titleMap.has(value)) {
+              titleMap.delete(value);
+          } else {
+              titleMap.add(value);
+          }
+          
+          // If all options selected, clear filter
+          const allOptions = getFilterOptions(columnKey);
+          if (titleMap.size === allOptions.length) {
+              delete next[columnKey];
+          } else {
+              next[columnKey] = titleMap;
+          }
+          
+          return next;
+      });
+  };
+
+  const toggleSelectAll = (columnKey, allOptions) => {
+      setProcFilters(prev => {
+          const next = { ...prev };
+          if (!next[columnKey]) {
+            // Currently all selected -> Deselect all
+            next[columnKey] = new Set();
+          } else {
+             // Currently filtered -> Select all (clear filter)
+             delete next[columnKey];
+          }
+          return next;
+      });
   };
 
   // --- Views ---
@@ -668,8 +798,199 @@ export default function PKPApp() {
   };
 
   const renderConfiguration = () => {
+    const filteredData = getFilteredProcedures();
+
+    const TableHeader = ({ label, columnKey, width }) => {
+        const isSorted = procSort.key === columnKey;
+        const isFiltered = procFilters[columnKey];
+        const options = getFilterOptions(columnKey);
+        const [searchTerm, setSearchTerm] = useState('');
+        const [tempSelection, setTempSelection] = useState(null); // Temporary selection before apply
+
+        // Initialize temp selection when dropdown opens
+        React.useEffect(() => {
+            if (activeFilterDropdown === columnKey) {
+                setTempSelection(procFilters[columnKey] ? new Set(procFilters[columnKey]) : null);
+                setSearchTerm('');
+            }
+        }, [activeFilterDropdown]);
+
+        // Filter options logic
+        const displayedOptions = options.filter(opt => opt.toLowerCase().includes(searchTerm.toLowerCase()));
+        
+        // Check state - use temp selection if exists
+        const currentSelection = tempSelection !== null ? tempSelection : procFilters[columnKey];
+        const isAllSelected = !currentSelection;
+        
+        const isSelected = (val) => !currentSelection || currentSelection.has(val);
+
+        const toggleTempFilter = (value) => {
+            setTempSelection(prev => {
+                const current = prev || new Set(options);
+                const next = new Set(current);
+                
+                if (next.has(value)) {
+                    next.delete(value);
+                } else {
+                    next.add(value);
+                }
+                
+                return next;
+            });
+        };
+
+        const toggleTempSelectAll = () => {
+            setTempSelection(prev => {
+                // If prev is null, it means 'All Selected' (conceptually options set)
+                const current = prev || new Set(options);
+                const next = new Set(current);
+                
+                // If search is active, we only toggle the VISIBLE items
+                const targets = displayedOptions;
+                
+                // Check if all TARGET items are currently selected
+                const allTargetsSelected = targets.every(t => next.has(t));
+
+                if (allTargetsSelected) {
+                    // Deselect visible items
+                    targets.forEach(t => next.delete(t));
+                } else {
+                    // Select visible items
+                    targets.forEach(t => next.add(t));
+                }
+
+                return next;
+            });
+        };
+
+        const applyFilter = () => {
+            setProcFilters(prev => {
+                const next = { ...prev };
+                if (!tempSelection || tempSelection.size === options.length) {
+                    delete next[columnKey];
+                } else if (tempSelection.size === 0) {
+                    next[columnKey] = new Set();
+                } else {
+                    next[columnKey] = tempSelection;
+                }
+                return next;
+            });
+            setActiveFilterDropdown(null);
+        };
+
+        const cancelFilter = () => {
+            setActiveFilterDropdown(null);
+        };
+
+        return (
+            <th className={`px-3 py-2.5 font-semibold text-slate-700 bg-slate-50 border-b border-slate-200 select-none text-xs ${width}`}>
+                <div className="flex items-center justify-between gap-2">
+                    <span 
+                        className="cursor-pointer hover:text-red-700 flex items-center gap-1"
+                        onClick={() => setProcSort({ key: columnKey, direction: procSort.key === columnKey && procSort.direction === 'asc' ? 'desc' : 'asc' })}
+                    >
+                        {label}
+                        <div className="flex flex-col">
+                            {(!isSorted || procSort.direction === 'asc') && <ArrowUp className={`w-2 h-2 ${isSorted ? 'text-red-600' : 'text-slate-300'}`} />}
+                            {(!isSorted || procSort.direction === 'desc') && <ArrowDown className={`w-2 h-2 ${isSorted ? 'text-red-600' : 'text-slate-300'}`} />}
+                        </div>
+                    </span>
+                    
+                    <div className="relative">
+                        <button 
+                            onClick={(e) => { 
+                                e.stopPropagation(); 
+                                if (activeFilterDropdown === columnKey) {
+                                    setActiveFilterDropdown(null);
+                                } else {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setFilterDropdownPos({
+                                        top: Math.min(window.innerHeight - 450, rect.bottom + 8),
+                                        left: Math.max(20, Math.min(window.innerWidth - 310, rect.right - 288))
+                                    });
+                                    setActiveFilterDropdown(columnKey); 
+                                }
+                            }}
+                            className={`p-1 rounded hover:bg-slate-200 ${isFiltered ? 'text-red-600 bg-red-50' : 'text-slate-400'}`}
+                        >
+                            <Filter className="w-3 h-3" />
+                        </button>
+
+                        {activeFilterDropdown === columnKey && filterDropdownPos && (
+                            <div className="fixed bg-white rounded-lg shadow-xl border border-slate-200 z-[100] flex flex-col w-72 animate-in fade-in zoom-in-95" 
+                                 style={{ 
+                                     top: `${filterDropdownPos.top}px`,
+                                     left: `${filterDropdownPos.left}px`
+                                 }}
+                                 onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="p-3">
+                                    <div className="relative group">
+                                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-red-500 transition-colors" />
+                                        <input 
+                                            autoFocus
+                                            className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all text-slate-700" 
+                                            placeholder="Cari..." 
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="max-h-60 overflow-y-auto px-1 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+                                    <div 
+                                        className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer text-sm transition-colors"
+                                        onClick={toggleTempSelectAll}
+                                    >
+                                        <div className={`w-4 h-4 rounded-[3px] border flex items-center justify-center transition-colors ${isAllSelected ? 'bg-red-600 border-red-600' : 'bg-white border-slate-500'}`}>
+                                            {isAllSelected && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+                                        </div>
+                                        <span className="font-bold text-slate-800">Pilih Semua</span>
+                                    </div>
+                                    <div className="h-px bg-slate-100 mx-3 my-1"></div>
+                                    {displayedOptions.map((opt, idx) => {
+                                        const selected = isSelected(opt);
+                                        return (
+                                            <div 
+                                                key={idx} 
+                                                className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer text-sm transition-colors"
+                                                onClick={() => toggleTempFilter(opt)}
+                                            >
+                                                <div className={`w-4 h-4 rounded-[3px] border flex items-center justify-center transition-colors ${selected ? 'bg-red-600 border-red-600' : 'bg-white border-slate-500'}`}>
+                                                    {selected && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+                                                </div>
+                                                <span className="truncate text-slate-600">{opt || '(Kosong)'}</span>
+                                            </div>
+                                        );
+                                    })}
+                                    {displayedOptions.length === 0 && (
+                                        <div className="text-center py-8 text-slate-400 text-sm">Tidak ada hasil</div>
+                                    )}
+                                </div>
+                                <div className="p-3 border-t border-slate-100 mt-1 flex justify-between items-center bg-white rounded-b-lg">
+                                    <button 
+                                        onClick={applyFilter}
+                                        className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-bold text-sm shadow-sm transition-colors"
+                                    >
+                                        Terapkan
+                                    </button>
+                                    <button 
+                                        onClick={cancelFilter}
+                                        className="text-slate-500 hover:text-slate-800 font-medium text-sm px-2 py-2 transition-colors"
+                                    >
+                                        Batal
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </th>
+        );
+    };
+
     return (
-        <div className="space-y-6 animate-in fade-in">
+        <div className="space-y-6 animate-in fade-in" onClick={() => setActiveFilterDropdown(null)}>
              <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-slate-800">
                     {activeMenu === 'config_examiners' ? 'Manajemen Pemeriksa' : 'Bank Prosedur'}
@@ -680,6 +1001,11 @@ export default function PKPApp() {
                      </Button>
                 ) : (
                     <div className="flex gap-2">
+                        {Object.keys(procFilters).length > 0 && (
+                            <Button variant="outline" onClick={() => setProcFilters({})} className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300">
+                                <Filter className="w-4 h-4 mr-2" /> Hapus Seluruh Filter
+                            </Button>
+                        )}
                         <Button variant="outline" onClick={() => setShowCloudModal(true)}>
                             <Cloud className="w-4 h-4" /> Sinkronisasi
                         </Button>
@@ -695,8 +1021,10 @@ export default function PKPApp() {
                     <table className="w-full text-sm text-left">
                         <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
                             <tr>
-                                <th className="px-6 py-3">Nama Lengkap</th>
-                                <th className="px-6 py-3">Peran dalam Tim</th>
+                                <th className="px-6 py-3 w-40">NIP BPK</th>
+                                <th className="px-6 py-3">Nama</th>
+                                <th className="px-6 py-3">Peran</th>
+                                <th className="px-6 py-3">Subtim</th>
                                 <th className="px-6 py-3 text-right">Aksi</th>
                             </tr>
                         </thead>
@@ -731,24 +1059,26 @@ export default function PKPApp() {
                                         });
                                     }}
                                 >
-                                    <td className="px-6 py-3 font-medium text-slate-800 flex items-center gap-3">
-                                        <GripVertical className="w-4 h-4 text-slate-300 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity" />
-                                        <div className="w-8 h-8 rounded-full bg-slate-100 overflow-hidden border border-slate-200 shrink-0">
-                                            {ex.nip ? (
-                                                <img 
-                                                    src={`https://sisdm.bpk.go.id/photo/${ex.nip}/md.jpg`} 
-                                                    alt={ex.initials}
-                                                    className="w-full h-full object-cover"
-                                                    onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
-                                                />
-                                            ) : null}
-                                            <div className="w-full h-full bg-red-100 text-red-900 flex items-center justify-center text-xs font-bold" style={{ display: ex.nip ? 'none' : 'flex' }}>
-                                                {ex.initials}
+                                    <td className="px-6 py-3 text-slate-500 font-mono text-xs">
+                                        {ex.nip || '-'}
+                                    </td>
+                                    <td className="px-6 py-3 font-medium text-slate-800">
+                                        <div className="flex items-center gap-3">
+                                            <GripVertical className="w-4 h-4 text-slate-300 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            <div className="w-8 h-8 rounded-full bg-slate-100 overflow-hidden border border-slate-200 shrink-0">
+                                                {ex.nip ? (
+                                                    <img 
+                                                        src={`https://sisdm.bpk.go.id/photo/${ex.nip}/md.jpg`} 
+                                                        alt={ex.initials}
+                                                        className="w-full h-full object-cover"
+                                                        onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                                                    />
+                                                ) : null}
+                                                <div className="w-full h-full bg-red-100 text-red-900 flex items-center justify-center text-xs font-bold" style={{ display: ex.nip ? 'none' : 'flex' }}>
+                                                    {ex.initials}
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div>
-                                            <div>{ex.name}</div>
-                                            <div className="text-xs text-slate-400 font-mono">{ex.nip || '-'}</div>
+                                            <span>{ex.name}</span>
                                         </div>
                                     </td>
                                     <td className="px-6 py-3">
@@ -756,64 +1086,87 @@ export default function PKPApp() {
                                             {EXAMINER_ROLES.find(r => r.key === ex.role)?.label || ex.role}
                                         </span>
                                     </td>
+                                    <td className="px-6 py-3 text-slate-600 text-sm">
+                                        {ex.kstId ? examiners.find(e => e.id === ex.kstId)?.name || '-' : '-'}
+                                    </td>
                                     <td className="px-6 py-3 text-right">
                                         <button onClick={() => { setEditingExaminer(ex); setShowExaminerModal(true); }} className="text-blue-600 hover:bg-blue-50 p-1 rounded mr-1"><Pencil className="w-4 h-4"/></button>
                                         <button onClick={() => handleDeleteExaminer(ex.id)} className="text-rose-600 hover:bg-rose-50 p-1 rounded"><Trash2 className="w-4 h-4"/></button>
                                     </td>
                                 </tr>
                             ))}
-                            {examiners.length === 0 && <tr><td colSpan="3" className="p-8 text-center text-slate-400 italic">Belum ada data pemeriksa.</td></tr>}
+                            {examiners.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-400 italic">Belum ada data pemeriksa.</td></tr>}
                         </tbody>
                     </table>
                 </div>
              )}
 
              {activeMenu === 'config_procedures' && (
-                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-auto h-[calc(100vh-10rem)]">
+                    <table className="w-full text-sm text-left relative">
+                        <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 sticky top-0 z-20 shadow-sm">
                             <tr>
-                                <th className="px-4 py-3 min-w-[120px]">Jenis Laporan</th>
-                                <th className="px-4 py-3 min-w-[150px]">Akun 1</th>
-                                <th className="px-4 py-3 min-w-[150px]">Akun 2</th>
-                                <th className="px-4 py-3 min-w-[300px]">Prosedur Pemeriksaan</th>
-                                <th className="px-4 py-3">Level</th>
-                                <th className="px-4 py-3">Header</th>
-                                <th className="px-4 py-3 text-right">Aksi</th>
+                                <TableHeader label="Jenis Laporan" columnKey="jenis_laporan" width="w-24" />
+                                <TableHeader label="Akun 1" columnKey="akun_1" width="w-32" />
+                                <TableHeader label="Akun 2" columnKey="akun_2" width="w-32" />
+                                <TableHeader label="Akun 3" columnKey="akun_3" width="w-32" />
+                                <TableHeader label="Prosedur" columnKey="prosedur" width="" />
+                                <TableHeader label="Level" columnKey="level" width="w-16" />
+                                <TableHeader label="Header" columnKey="isheader" width="w-16" />
+                                <th className="px-3 py-2.5 text-right w-20 text-xs">Aksi</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {procedures.map(proc => (
-                                <tr key={proc.id} className="hover:bg-slate-50 align-top">
-                                    <td className="px-4 py-3 text-slate-600">
-                                        {proc.jenis_laporan}
+                        <tbody className="divide-y divide-slate-100 text-xs">
+                            {filteredData.map(proc => (
+                                <tr key={proc.id} className="hover:bg-slate-50 align-top group">
+                                    <td className="px-3 py-2.5 text-slate-600 align-middle">
+                                        <span className="font-semibold bg-slate-100 px-1.5 py-0.5 rounded text-[11px]">{proc.jenis_laporan}</span>
                                     </td>
-                                    <td className="px-4 py-3">
-                                        <div className="font-mono font-bold text-xs text-slate-500">{proc.kode_akun_1}</div>
-                                        <div className="text-slate-800 text-xs">{proc.nama_akun_1}</div>
+                                    <td className="px-3 py-2.5 align-middle">
+                                        <div className="font-mono font-bold text-[10px] text-slate-500 leading-tight">{proc.kode_akun_1}</div>
+                                        <div className="text-slate-800 text-[11px] leading-tight mt-0.5">{proc.nama_akun_1}</div>
                                     </td>
-                                    <td className="px-4 py-3">
-                                        <div className="font-mono font-bold text-xs text-slate-500">{proc.kode_akun_2}</div>
-                                        <div className="text-slate-800 text-xs">{proc.nama_akun_2}</div>
+                                    <td className="px-3 py-2.5 align-middle">
+                                        <div className="font-mono font-bold text-[10px] text-slate-500 leading-tight">{proc.kode_akun_2}</div>
+                                        <div className="text-slate-800 text-[11px] leading-tight mt-0.5">{proc.nama_akun_2}</div>
                                     </td>
-                                    <td className="px-4 py-3">
-                                        <div className="font-mono font-bold text-xs text-blue-600 mb-1">{proc.code}</div>
-                                        <div className="text-slate-800 text-sm leading-relaxed">{proc.name}</div>
+                                    <td className="px-3 py-2.5 align-middle">
+                                        <div className="font-mono font-bold text-[10px] text-slate-500 leading-tight">{proc.kode_akun_3}</div>
+                                        <div className="text-slate-800 text-[11px] leading-tight mt-0.5">{proc.nama_akun_3}</div>
                                     </td>
-                                    <td className="px-4 py-3 text-center">{proc.level}</td>
-                                    <td className="px-4 py-3 text-center">
+                                    <td className="px-3 py-2.5">
+                                        <div className="flex gap-1.5 mb-1">
+                                            <span className="font-mono font-bold text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">{proc.code}</span>
+                                            {proc.isheader === '1' && <span className="text-[9px] bg-yellow-100 text-yellow-800 px-1 py-0.5 rounded font-bold border border-yellow-200">HEADER</span>}
+                                        </div>
+                                        <div className="text-slate-800 text-[13px] leading-snug">{proc.name}</div>
+                                    </td>
+                                    <td className="px-3 py-2.5 text-center align-middle">
+                                        <span className="font-mono font-semibold text-slate-600 text-[11px]">{proc.level}</span>
+                                    </td>
+                                    <td className="px-3 py-2.5 text-center align-middle">
                                         {proc.isheader === '1' || proc.isheader === 1 || proc.isheader === 'TRUE' ? 
                                             <CheckCircle2 className="w-4 h-4 text-green-500 mx-auto" /> : 
-                                            <span className="text-slate-300">-</span>
+                                            <span className="text-slate-300 text-xs">-</span>
                                         }
                                     </td>
-                                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                                        <button onClick={() => { setEditingProcedure(proc); setShowProcedureModal(true); }} className="text-blue-600 hover:bg-blue-50 p-1 rounded mr-1"><Pencil className="w-4 h-4"/></button>
-                                        <button onClick={() => handleDeleteProcedure(proc.id)} className="text-rose-600 hover:bg-rose-50 p-1 rounded"><Trash2 className="w-4 h-4"/></button>
+                                    <td className="px-3 py-2.5 text-right whitespace-nowrap align-middle">
+                                        <button onClick={() => { setEditingProcedure(proc); setShowProcedureModal(true); }} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded mr-1 transition-colors"><Pencil className="w-3.5 h-3.5"/></button>
+                                        <button onClick={() => handleDeleteProcedure(proc.id)} className="text-rose-600 hover:bg-rose-50 p-1.5 rounded transition-colors"><Trash2 className="w-3.5 h-3.5"/></button>
                                     </td>
                                 </tr>
                             ))}
-                            {procedures.length === 0 && <tr><td colSpan="7" className="p-8 text-center text-slate-400 italic">Belum ada prosedur.</td></tr>}
+                            {filteredData.length === 0 && (
+                                <tr>
+                                    <td colSpan="8" className="p-12 text-center">
+                                        <div className="flex flex-col items-center justify-center text-slate-400">
+                                            <Filter className="w-12 h-12 mb-3 opacity-20" />
+                                            <p className="font-medium">Tidak ada data yang sesuai filter</p>
+                                            <button onClick={() => setProcFilters({})} className="mt-2 text-blue-600 text-sm hover:underline">Reset Filter</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
@@ -824,6 +1177,10 @@ export default function PKPApp() {
 
   const renderDistributionWorkspace = () => {
     const unassigned = getUnassignedProcedures();
+    const unassignedFiltered = unassigned.filter(p => 
+        p.code.toLowerCase().includes(bankSearchTerm.toLowerCase()) || 
+        p.name.toLowerCase().includes(bankSearchTerm.toLowerCase())
+    );
     
     return (
         <div className="h-[calc(100vh-6rem)] flex flex-col animate-in fade-in">
@@ -862,33 +1219,106 @@ export default function PKPApp() {
             <div className="flex-1 flex gap-4 overflow-hidden">
                 
                 {/* Left: Bank Prosedur (Unassigned) */}
-                <div className="w-80 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col shrink-0">
-                    <div className="p-4 border-b border-slate-200 bg-slate-50 rounded-t-xl flex justify-between items-center">
-                        <h3 className="font-bold text-slate-700 flex items-center gap-2"><Briefcase className="w-4 h-4"/> Bank Prosedur</h3>
-                        <span className="bg-rose-100 text-rose-700 text-xs font-bold px-2 py-1 rounded-full">{unassigned.length}</span>
+                <div className="w-80 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col shrink-0 relative">
+                    <div className="p-3 border-b border-slate-200 bg-slate-50 rounded-t-xl space-y-3">
+                        <div className="flex justify-between items-center">
+                            <h3 className="font-bold text-slate-700 flex items-center gap-2"><Briefcase className="w-4 h-4"/> Bank Prosedur</h3>
+                            <span className="bg-rose-100 text-rose-700 text-xs font-bold px-2 py-1 rounded-full">{unassigned.length}</span>
+                        </div>
+                        
+                        <div className="relative">
+                            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400"/>
+                            <input 
+                                className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded focus:outline-none focus:border-red-500" 
+                                placeholder="Cari prosedur... (Kode/Nama)" 
+                                value={bankSearchTerm}
+                                onChange={(e) => setBankSearchTerm(e.target.value)}
+                            />
+                        </div>
+
+                        {selectedBankProcs.size > 0 && (
+                            <div className="bg-red-50 p-2 rounded border border-red-100 animate-in slide-in-from-top-2">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-[10px] font-bold text-red-800">{selectedBankProcs.size} dipilih</span>
+                                    <button onClick={() => setSelectedBankProcs(new Set())} className="text-[10px] text-red-600 underline">Batal</button>
+                                </div>
+                                <div className="flex gap-1">
+                                    <select 
+                                        className="flex-1 text-[10px] border border-red-200 rounded px-1 py-1 focus:outline-none"
+                                        onChange={(e) => {
+                                            if(e.target.value) handleBulkAssign(e.target.value);
+                                        }}
+                                        value=""
+                                    >
+                                        <option value="">Pindahkan ke...</option>
+                                        {examiners.filter(e=>e.role!=='KST').map(ex => (
+                                            <option key={ex.id} value={ex.id}>{ex.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        )}
+                        
+                        <div className="flex items-center gap-2 px-1">
+                            <input 
+                                type="checkbox" 
+                                className="rounded border-slate-300 text-red-600 focus:ring-red-500 w-3.5 h-3.5 cursor-pointer"
+                                checked={unassignedFiltered.length > 0 && selectedBankProcs.size === unassignedFiltered.length}
+                                onChange={(e) => {
+                                    if(e.target.checked) {
+                                        setSelectedBankProcs(new Set(unassignedFiltered.map(p => p.id)));
+                                    } else {
+                                        setSelectedBankProcs(new Set());
+                                    }
+                                }}
+                            />
+                            <span className="text-xs text-slate-500">Pilih Semua ({unassignedFiltered.length})</span>
+                        </div>
                     </div>
+                    
                     <div 
-                        className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50/50"
+                        className="flex-1 overflow-y-auto p-2 space-y-2 bg-slate-50/50"
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={(e) => handleDrop(e, 'bank')}
                     >
-                        {unassigned.map(proc => (
+                        {unassignedFiltered.map(proc => (
                             <div 
                                 key={proc.id}
-                                draggable
-                                onDragStart={(e) => handleDragStart(e, proc.id, 'bank')}
-                                className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm cursor-grab active:cursor-grabbing hover:border-red-400 hover:shadow-md transition-all group"
+                                className={`bg-white p-3 rounded-lg border shadow-sm transition-all group flex gap-3 items-start ${selectedBankProcs.has(proc.id) ? 'border-red-500 ring-1 ring-red-500 bg-red-50/30' : 'border-slate-200 hover:border-red-300'}`}
                             >
-                                <div className="flex justify-between items-start mb-1">
-                                    <span className="bg-slate-100 text-slate-600 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded">{proc.code}</span>
-                                    <GripVertical className="w-3 h-3 text-slate-300 group-hover:text-red-400" />
+                                <input 
+                                    type="checkbox" 
+                                    className="mt-1 rounded border-slate-300 text-red-600 focus:ring-red-500 w-3.5 h-3.5 cursor-pointer"
+                                    checked={selectedBankProcs.has(proc.id)}
+                                    onChange={() => {
+                                        setSelectedBankProcs(prev => {
+                                            const next = new Set(prev);
+                                            if(next.has(proc.id)) next.delete(proc.id);
+                                            else next.add(proc.id);
+                                            return next;
+                                        });
+                                    }}
+                                />
+                                <div 
+                                    className="flex-1 cursor-grab active:cursor-grabbing"
+                                    draggable
+                                    onDragStart={(e) => handleDragStart(e, proc.id, 'bank')}
+                                >
+                                    <div className="flex justify-between items-start mb-1">
+                                        <span className="bg-slate-100 text-slate-600 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded">{proc.code}</span>
+                                        <GripVertical className="w-3 h-3 text-slate-300 group-hover:text-red-400" />
+                                    </div>
+                                    <p className="text-xs text-slate-700 line-clamp-3">{proc.name}</p>
                                 </div>
-                                <p className="text-xs text-slate-700 line-clamp-2">{proc.name}</p>
                             </div>
                         ))}
-                        {unassigned.length === 0 && (
+                        {unassignedFiltered.length === 0 && (
                             <div className="text-center py-10 text-slate-400 text-xs italic">
-                                Semua prosedur telah dibagikan! <CheckCircle2 className="w-8 h-8 mx-auto mt-2 text-green-300" />
+                                {unassigned.length === 0 ? (
+                                    <span>Semua prosedur telah dibagikan! <CheckCircle2 className="w-8 h-8 mx-auto mt-2 text-green-300" /></span>
+                                ) : (
+                                    "Tidak ada prosedur yang sesuai pencarian."
+                                )}
                             </div>
                         )}
                     </div>
@@ -1113,34 +1543,50 @@ export default function PKPApp() {
                   </form>
               </Modal>
 
-              <Modal isOpen={showProcedureModal} onClose={() => setShowProcedureModal(false)} title={editingProcedure ? 'Edit Prosedur' : 'Tambah Prosedur'}>
+              <Modal isOpen={showProcedureModal} onClose={() => setShowProcedureModal(false)} title={editingProcedure ? 'Edit Prosedur' : 'Tambah Prosedur Manual'}>
                   <form onSubmit={handleSaveProcedure}>
+                      <div className="mb-4">
+                          <label className="block text-xs font-semibold text-slate-500 mb-1">Jenis Laporan</label>
+                          <select 
+                              name="jenis_laporan" 
+                              defaultValue={editingProcedure?.jenis_laporan || ''} 
+                              className="w-full bg-white border border-slate-300 px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-red-800"
+                          >
+                              <option value="">-- Pilih Jenis Laporan --</option>
+                              <option value="LRA">LRA</option>
+                              <option value="Neraca">Neraca</option>
+                              <option value="LO">LO</option>
+                          </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                          <Input name="kode_akun_1" label="Kode Akun 1" defaultValue={editingProcedure?.kode_akun_1} placeholder="Contoh: 1000" />
+                          <Input name="nama_akun_1" label="Nama Akun 1" defaultValue={editingProcedure?.nama_akun_1} placeholder="Contoh: Kas" />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                          <Input name="kode_akun_2" label="Kode Akun 2" defaultValue={editingProcedure?.kode_akun_2} placeholder="Contoh: 2000" />
+                          <Input name="nama_akun_2" label="Nama Akun 2" defaultValue={editingProcedure?.nama_akun_2} placeholder="Contoh: Hutang" />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                          <Input name="kode_akun_3" label="Kode Akun 3" defaultValue={editingProcedure?.kode_akun_3} placeholder="Contoh: 3000" />
+                          <Input name="nama_akun_3" label="Nama Akun 3" defaultValue={editingProcedure?.nama_akun_3} placeholder="Contoh: Modal" />
+                      </div>
+
                       <div className="grid grid-cols-2 gap-4">
                           <Input name="code" label="Kode Prosedur" defaultValue={editingProcedure?.code} required placeholder="Contoh: KAS-01" />
-                          <Input name="jenis_laporan" label="Jenis Laporan" defaultValue={editingProcedure?.jenis_laporan} placeholder="LRA / LO / Neraca" />
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4">
-                          <Input name="kode_akun_1" label="Kode Akun 1" defaultValue={editingProcedure?.kode_akun_1} />
-                          <Input name="nama_akun_1" label="Nama Akun 1" defaultValue={editingProcedure?.nama_akun_1} />
+                          <Input name="level" label="Level" defaultValue={editingProcedure?.level} placeholder="Contoh: 1" />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
-                          <Input name="kode_akun_2" label="Kode Akun 2" defaultValue={editingProcedure?.kode_akun_2} />
-                          <Input name="nama_akun_2" label="Nama Akun 2" defaultValue={editingProcedure?.nama_akun_2} />
-                      </div>
-
-                      <TextArea name="name" label="Uraian Prosedur" defaultValue={editingProcedure?.name} required placeholder="Deskripsi lengkap prosedur..." />
+                      <TextArea name="name" label="Uraian Prosedur" defaultValue={editingProcedure?.name} required placeholder="Deskripsi lengkap prosedur pemeriksaan..." />
                       
-                      <div className="grid grid-cols-2 gap-4">
-                          <Input name="level" label="Level" defaultValue={editingProcedure?.level} />
-                          <div className="mb-3">
-                            <label className="block text-xs font-semibold text-slate-500 mb-1">Is Header?</label>
-                            <select name="isheader" defaultValue={editingProcedure?.isheader || '0'} className="w-full bg-white border border-slate-300 px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-red-800">
-                                <option value="0">Tidak</option>
-                                <option value="1">Ya</option>
-                            </select>
-                          </div>
+                      <div className="mb-3">
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Header</label>
+                        <select name="isheader" defaultValue={editingProcedure?.isheader || '0'} className="w-full bg-white border border-slate-300 px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-red-800">
+                            <option value="0">Tidak</option>
+                            <option value="1">Ya</option>
+                        </select>
                       </div>
 
                       <div className="flex justify-end gap-2 mt-6">
