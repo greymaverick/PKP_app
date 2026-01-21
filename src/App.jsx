@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { 
   Plus, Trash2, Users, FileText, GripVertical, Save, 
   X, LayoutDashboard, Menu, ChevronRight, ChevronDown, 
   Search, ArrowUpDown, Filter, Check, 
   ShieldCheck, Pencil, AlertTriangle, Info, Activity, CheckCircle2, List, FolderOpen, ArrowDownAZ, Printer, Briefcase, PieChart,
-  Cloud, RefreshCw, ArrowUp, ArrowDown, Square, CheckSquare, Power
+  Cloud, RefreshCw, ArrowUp, ArrowDown, Square, CheckSquare, Power, Settings, LogOut
 } from 'lucide-react';
 
 // --- Constants ---
@@ -14,6 +16,8 @@ const APP_SUBTITLE = "Tool Distribusi Prosedur Pemeriksaan dan Penyusunan PKP";
 const DEVELOPER_NAME = "Tim DAC BPK Bali"; 
 const YEAR = "2026";
 const DEFAULT_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSR6Rs07aIVrcXR6D5h6S1YZLQ4GciEZLmh_TanvZQMUNxA5xHdR1R-U4C6h7lAGxyRpV9J_40cFqj7/pub?gid=0&single=true&output=csv";
+// Google Sheet untuk validasi user login (NIP & Email BPK)
+const USER_VALIDATION_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTqy2RlO-gEG-j-JMYsGR-VB_pLsnca-NYvuv2zSoBvvTPPDxKg2hQboiiGNYG2eAtI7fERFH5LgZB7/pub?gid=0&single=true&output=csv";
 
 // Role Pemeriksa (Disederhanakan)
 const EXAMINER_ROLES = [
@@ -68,67 +72,58 @@ const Button = ({ children, onClick, variant = 'primary', className = '', ...pro
 
 const Input = ({ label, ...props }) => (
   <div className="mb-3">
-    {label && <label className="block text-xs font-semibold text-slate-500 mb-1">{label}</label>}
-    <input 
-      className="w-full bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded-lg focus:outline-none focus:border-red-800 focus:ring-1 focus:ring-red-800/20 placeholder-slate-400 text-sm shadow-sm transition-all"
+    {label && (
+      <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+    )}
+    <input
+      className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
       {...props}
     />
   </div>
 );
 
 const TextArea = ({ label, ...props }) => (
-    <div className="mb-3">
-      {label && <label className="block text-xs font-semibold text-slate-500 mb-1">{label}</label>}
-      <textarea 
-        className="w-full bg-white border border-slate-300 text-slate-800 px-3 py-2 rounded-lg focus:outline-none focus:border-red-800 focus:ring-1 focus:ring-red-800/20 placeholder-slate-400 text-sm shadow-sm transition-all"
-        rows={3}
-        {...props}
-      />
-    </div>
-  );
-
-// --- Modals ---
+  <div className="mb-3">
+    {label && (
+      <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+    )}
+    <textarea
+      className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+      rows={4}
+      {...props}
+    />
+  </div>
+);
 
 const Modal = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 sticky top-0">
-          <h3 className="font-bold text-slate-800">{title}</h3>
-          <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full text-slate-500"><X className="w-5 h-5"/></button>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-auto m-4" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-slate-800">{title}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X className="w-5 h-5" />
+          </button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-6">{children}</div>
       </div>
     </div>
   );
 };
 
-const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, confirmText = 'Hapus', confirmType = 'danger' }) => {
+const ConfirmModal = ({ isOpen, onClose, title, message, onConfirm, confirmText = 'Konfirmasi', confirmType = 'primary' }) => {
   if (!isOpen) return null;
-  
-  const isDanger = confirmType === 'danger';
-  
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-        <div className="flex items-start gap-4">
-          <div className={`p-3 rounded-full shrink-0 ${isDanger ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
-             {isDanger ? <AlertTriangle className="w-6 h-6" /> : <Info className="w-6 h-6" />}
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md m-4">
+        <div className="p-6">
+          <h3 className="text-lg font-bold text-slate-800 mb-2">{title}</h3>
+          <p className="text-slate-600 mb-6">{message}</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>Batal</Button>
+            <Button variant={confirmType} onClick={() => { onConfirm(); onClose(); }}>{confirmText}</Button>
           </div>
-          <div className="flex-1">
-            <h3 className="text-lg font-bold text-slate-900 mb-2">{title}</h3>
-            <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{message}</p>
-          </div>
-        </div>
-        <div className="mt-6 flex justify-end gap-3">
-          <button 
-              onClick={() => { onConfirm(); onClose(); }} 
-              className={`px-4 py-2 rounded-lg text-white font-medium text-sm transition-colors ${isDanger ? 'bg-red-700 hover:bg-red-800' : 'bg-blue-600 hover:bg-blue-700'}`}
-          >
-              {confirmText}
-          </button>
-          <button onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium text-sm">Batal</button>
         </div>
       </div>
     </div>
@@ -136,158 +131,253 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, confirmText 
 };
 
 const AlertModal = ({ isOpen, onClose, title, message, type = 'info' }) => {
-    if (!isOpen) return null;
-
-    const styles = {
-        success: { bg: 'bg-green-100', text: 'text-green-600', icon: <CheckCircle2 className="w-6 h-6" />, btn: 'bg-green-600 hover:bg-green-700' },
-        error: { bg: 'bg-red-100', text: 'text-red-600', icon: <AlertTriangle className="w-6 h-6" />, btn: 'bg-red-600 hover:bg-red-700' },
-        info: { bg: 'bg-blue-100', text: 'text-blue-600', icon: <Info className="w-6 h-6" />, btn: 'bg-blue-600 hover:bg-blue-700' },
-        warning: { bg: 'bg-amber-100', text: 'text-amber-600', icon: <AlertTriangle className="w-6 h-6" />, btn: 'bg-amber-600 hover:bg-amber-700' }
-    };
-    
-    const style = styles[type] || styles.info;
-
-    return (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
-            <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-                <div className="flex flex-col items-center text-center">
-                    <div className={`p-3 rounded-full mb-4 ${style.bg} ${style.text}`}>
-                        {style.icon}
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-900 mb-2">{title}</h3>
-                    <p className="text-sm text-slate-600 leading-relaxed mb-6">{message}</p>
-                    <button 
-                        onClick={onClose} 
-                        className={`w-full py-2.5 rounded-lg text-white font-medium text-sm transition-colors ${style.btn}`}
-                    >
-                        OK
-                    </button>
-                </div>
+  if (!isOpen) return null;
+  const icons = {
+    info: <Info className="w-6 h-6 text-blue-600" />,
+    success: <CheckCircle2 className="w-6 h-6 text-green-600" />,
+    error: <AlertTriangle className="w-6 h-6 text-red-600" />
+  };
+  const colors = {
+    info: 'bg-blue-50 border-blue-200',
+    success: 'bg-green-50 border-green-200',
+    error: 'bg-red-50 border-red-200'
+  };
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className={`bg-white rounded-xl shadow-2xl w-full max-w-md m-4 border-2 ${colors[type]}`}>
+        <div className="p-6">
+          <div className="flex items-start gap-3 mb-4">
+            {icons[type]}
+            <div>
+              <h3 className="text-lg font-bold text-slate-800">{title}</h3>
+              <p className="text-slate-600 mt-1">{message}</p>
             </div>
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={onClose}>OK</Button>
+          </div>
         </div>
-    );
+      </div>
+    </div>
+  );
 };
 
 const ExaminerFormFields = ({ editingExaminer, examiners }) => {
-    const [selectedRole, setSelectedRole] = useState(editingExaminer?.role || 'AT');
-    
-    // Filter KST available
-    const availableKST = examiners.filter(ex => ex.role === 'KST');
-
-    return (
-        <>
-            <div className="mb-4">
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Peran Tim</label>
-                <select 
-                    name="role" 
-                    value={selectedRole}
-                    onChange={(e) => setSelectedRole(e.target.value)}
-                    className="w-full bg-white border border-slate-300 px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-red-800"
-                >
-                    {EXAMINER_ROLES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
-                </select>
-            </div>
-
-            {selectedRole !== 'KST' && selectedRole !== 'KT' && (
-                <div className="mb-4 animate-in fade-in slide-in-from-top-2">
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">Di Bawah KST</label>
-                    <select 
-                        name="kstId" 
-                        defaultValue={editingExaminer?.kstId || ''} 
-                        className="w-full bg-white border border-slate-300 px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-red-800"
-                    >
-                        <option value="">-- Pilih Ketua Subtim --</option>
-                        {availableKST.map(kst => (
-                            <option key={kst.id} value={kst.id}>{kst.name}</option>
-                        ))}
-                    </select>
-                    {availableKST.length === 0 && <p className="text-[10px] text-red-500 mt-1">*Belum ada KST terdaftar. Tambahkan KST terlebih dahulu.</p>}
-                </div>
-            )}
-        </>
-    );
+  const [selectedRole, setSelectedRole] = useState(editingExaminer?.role || 'AT');
+  
+  return (
+    <>
+      <div className="mb-3">
+        <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
+        <select 
+          name="role" 
+          value={selectedRole} 
+          onChange={(e) => setSelectedRole(e.target.value)}
+          className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+          required
+        >
+          {EXAMINER_ROLES.map(role => (
+            <option key={role.key} value={role.key}>{role.label}</option>
+          ))}
+        </select>
+      </div>
+      
+      {selectedRole === 'AT' && (
+        <div className="mb-3">
+          <label className="block text-sm font-medium text-slate-700 mb-1">Ketua Subtim</label>
+          <select 
+            name="kstId" 
+            defaultValue={editingExaminer?.kstId || ''}
+            className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+          >
+            <option value="">Tidak ada</option>
+            {examiners.filter(ex => ex.role === 'KST').map(kst => (
+              <option key={kst.id} value={kst.id}>{kst.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+    </>
+  );
 };
 
-// --- Main App ---
-
-export default function PKPApp() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activeMenu, setActiveMenu] = useState('distribution'); 
-  
-  // Data State
-  const [examiners, setExaminers] = useState([]); // Anggota Tim
-  const [procedures, setProcedures] = useState([]); // Daftar Prosedur
-  const [assignments, setAssignments] = useState({}); // { examinerId: [procedureId, procedureId] }
-  
-  // UI State
-  const [projectTitle, setProjectTitle] = useState('Untitled Project');
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [currentStatus, setCurrentStatus] = useState('draft');
-  const [lastSaved, setLastSaved] = useState(null);
-  
-  // Modal States
-  const [showExaminerModal, setShowExaminerModal] = useState(false);
-  const [editingExaminer, setEditingExaminer] = useState(null);
-  const [showProcedureModal, setShowProcedureModal] = useState(false);
-  const [editingProcedure, setEditingProcedure] = useState(null);
-  const [confirmState, setConfirmState] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {}, confirmText: 'Hapus', confirmType: 'danger' });
-  const [alertState, setAlertState] = useState({ isOpen: false, title: '', message: '', type: 'info' }); // type: info, success, error, warning
-
-  const showAlert = (title, message, type = 'info') => {
-      setAlertState({ isOpen: true, title, message, type });
-  };
-  
-  // Cloud Sync State
-  const [syncLoading, setSyncLoading] = useState(false);
-  const [cloudUrl, setCloudUrl] = useState(DEFAULT_CSV_URL);
-  const [showCloudModal, setShowCloudModal] = useState(false);
-  
-  // Bank Modal State
-  const [showBankModal, setShowBankModal] = useState(false);
-
-  // Filter & Sort State for Procedures
-  const [procSort, setProcSort] = useState({ key: null, direction: 'asc' });
-  const [procFilters, setProcFilters] = useState({}); // { key: Set(values) }
-  const [activeFilterDropdown, setActiveFilterDropdown] = useState(null); // column key
-  const [filterDropdownPos, setFilterDropdownPos] = useState(null); // { top, left } from button rect
-  
-  // Bank Prosedur Bulk Actions State
-  const [selectedBankProcs, setSelectedBankProcs] = useState(new Set());
+export default function App() {
+  // --- State Declarations ---
+  // Fix: Initialize these first to avoid ReferenceError
   const [bankSearchTerm, setBankSearchTerm] = useState('');
   const [bankTab, setBankTab] = useState('LRA');
-
-  // Expand/Collapse State
+  const [showBankModal, setShowBankModal] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState(new Set());
   const [examinerExpandedKeys, setExaminerExpandedKeys] = useState(new Set());
+  
+  const [examiners, setExaminers] = useState([]);
+  const [procedures, setProcedures] = useState([]);
+  const [assignments, setAssignments] = useState({});
+  const [activeMenu, setActiveMenu] = useState('distribution');
+  const [showExaminerModal, setShowExaminerModal] = useState(false);
+  const [showProcedureModal, setShowProcedureModal] = useState(false);
+  const [editingExaminer, setEditingExaminer] = useState(null);
+  const [editingProcedure, setEditingProcedure] = useState(null);
+  const [projectTitle, setProjectTitle] = useState('');
+  const [currentStatus, setCurrentStatus] = useState('draft');
+  const [lastSaved, setLastSaved] = useState(null);
+  const [selectedBankProcs, setSelectedBankProcs] = useState(new Set());
+  const [selectedExaminerProcs, setSelectedExaminerProcs] = useState(new Set());
+  const [showCloudModal, setShowCloudModal] = useState(false);
+  const [cloudUrl, setCloudUrl] = useState(DEFAULT_CSV_URL);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [confirmState, setConfirmState] = useState({ isOpen: false, title: '', message: '', onConfirm: null, confirmText: 'Konfirmasi', confirmType: 'primary' });
+  const [alertState, setAlertState] = useState({ isOpen: false, title: '', message: '', type: 'info' });
+  const [procFilters, setProcFilters] = useState({});
+  const [procSort, setProcSort] = useState({ key: null, direction: 'asc' });
+  const [activeFilterDropdown, setActiveFilterDropdown] = useState(null);
+  const [showPrintTahapanModal, setShowPrintTahapanModal] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loginNip, setLoginNip] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
 
-  // Drag and Drop Refs
-  const dragItem = useRef(null); // { type: 'procedure', id: procId }
+  // --- Examiner Modal Logic (Searchable Dropdown) ---
+  const [userList, setUserList] = useState([]);
+  const [examinerNameSearch, setExaminerNameSearch] = useState('');
+  const [isExaminerDropdownOpen, setIsExaminerDropdownOpen] = useState(false);
+  const [examinerNipValue, setExaminerNipValue] = useState('');
+
   const backupInputRef = useRef(null);
 
-  // --- Persistence ---
+  // 1. Fetch User List (NIP/Nama) from Google Sheet on Mount
   useEffect(() => {
-    const savedEx = localStorage.getItem('pkp_examiners');
-    const savedProc = localStorage.getItem('pkp_procedures');
-    const savedAssign = localStorage.getItem('pkp_assignments');
-    const savedMeta = localStorage.getItem('pkp_meta');
-    
-    if (savedEx) setExaminers(JSON.parse(savedEx));
-    if (savedProc) setProcedures(JSON.parse(savedProc));
-    if (savedAssign) setAssignments(JSON.parse(savedAssign));
-    if (savedMeta) {
-        const meta = JSON.parse(savedMeta);
-        setProjectTitle(meta.title || 'Untitled Project');
-        setCurrentStatus(meta.status || 'draft');
-        setLastSaved(meta.lastSaved);
-    }
+    const fetchUserList = async () => {
+        try {
+            const response = await fetch(USER_VALIDATION_SHEET_URL);
+            const csvText = await response.text();
+            
+            const lines = csvText.trim().split('\n');
+            const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+            const nipCol = headers.findIndex(h => h.includes('nip'));
+            const namaCol = headers.findIndex(h => h.includes('nama'));
+            
+            const users = [];
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',').map(c => c.trim());
+                if (cols.length > 1) {
+                    users.push({
+                        nip: cols[nipCol] || '',
+                        nama: cols[namaCol] || '' // Simpan nama as-is dari CSV
+                    });
+                }
+            }
+            setUserList(users);
+        } catch (error) {
+            console.error("Failed to fetch user list for dropdown", error);
+        }
+    };
+    fetchUserList();
   }, []);
 
+  // 2. Sync Local State when Examiner Modal Opens/Changes
   useEffect(() => {
-    localStorage.setItem('pkp_examiners', JSON.stringify(examiners));
-    localStorage.setItem('pkp_procedures', JSON.stringify(procedures));
-    localStorage.setItem('pkp_assignments', JSON.stringify(assignments));
-    localStorage.setItem('pkp_meta', JSON.stringify({ title: projectTitle, status: currentStatus, lastSaved }));
-  }, [examiners, procedures, assignments, projectTitle, currentStatus, lastSaved]);
+      if (showExaminerModal) {
+          if (editingExaminer) {
+              setExaminerNameSearch(editingExaminer.name);
+              setExaminerNipValue(editingExaminer.nip);
+          } else {
+              setExaminerNameSearch('');
+              setExaminerNipValue('');
+          }
+      }
+  }, [showExaminerModal, editingExaminer]);
+  const dragItem = useRef(null);
+
+  const showAlert = (title, message, type = 'info') => {
+    setAlertState({ isOpen: true, title, message, type });
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    localStorage.removeItem('pkp_currentUser');
+    setLoginNip('');
+    setLoginEmail('');
+    showAlert('Sukses', 'Anda telah logout', 'success');
+  };
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginLoading(true);
+
+    try {
+      // Fetch CSV dari Google Sheet
+      const response = await fetch(USER_VALIDATION_SHEET_URL);
+      const csvText = await response.text();
+      
+      // Parse CSV
+      const lines = csvText.trim().split('\n');
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      
+      // Find column indices dengan flexible matching
+      const nipCol = headers.findIndex(h => h.includes('nip'));
+      const emailCol = headers.findIndex(h => h.includes('email'));
+      const namaCol = headers.findIndex(h => h.includes('nama'));
+      
+      // Cari user berdasarkan NIP dan Email
+      let foundUser = null;
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map(c => c.trim());
+        const userNip = cols[nipCol] || '';
+        const userEmail = cols[emailCol] || '';
+        const userNama = cols[namaCol] || '';
+        
+        // Asumsi input user hanya username (without @bpk.go.id), kita tambahkan suffix
+        const inputUsername = loginEmail.trim();
+        // Handle jika user tidak sengaja mengetik @bpk.go.id, kita hapus dulu atau biarkan logic username saja
+        // Sesuai request: input hanya nama, jadi kita append manual.
+        const fullLoginEmail = inputUsername + '@bpk.go.id';
+
+        if (userNip === loginNip.trim() && userEmail.toLowerCase() === fullLoginEmail.toLowerCase()) {
+          foundUser = {
+            nip: userNip,
+            email: userEmail,
+            nama: userNama
+          };
+          break;
+        }
+      }
+
+      if (foundUser) {
+        // Login berhasil
+        setCurrentUser(foundUser);
+        setIsLoggedIn(true);
+        localStorage.setItem('pkp_currentUser', JSON.stringify(foundUser));
+        showAlert('Sukses', `Selamat datang, ${foundUser.nama}!`, 'success');
+      } else {
+        // Login gagal
+        showAlert('Error', 'NIP atau Email tidak ditemukan dalam daftar karyawan BPK.', 'error');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      showAlert('Error', 'Gagal memvalidasi login. Periksa koneksi internet Anda.', 'error');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  // Check if user already logged in (on mount)
+  useEffect(() => {
+    try {
+      const savedUser = localStorage.getItem('pkp_currentUser');
+      if (savedUser) {
+        const user = JSON.parse(savedUser);
+        setCurrentUser(user);
+        setIsLoggedIn(true);
+      }
+    } catch (error) {
+      console.error('Error loading user from storage:', error);
+    }
+  }, []);
 
   // --- Logic Implementations ---
 
@@ -379,7 +469,8 @@ export default function PKPApp() {
         return;
     }
 
-    dragItem.current = { type: 'bulk_bank', ids: ids, source: sourceExId };
+    const type = sourceExId === 'bank' ? 'bulk_bank' : 'bulk_examiner';
+    dragItem.current = { type, ids: ids, source: sourceExId };
     
     // Custom Ghost Image
     const ghost = document.createElement('div');
@@ -412,6 +503,44 @@ export default function PKPApp() {
 
   // DnD Logic
   const handleDragStart = (e, procId, sourceExId) => {
+    // Check if dragging a selected item in examiner list
+    if (sourceExId !== 'bank' && selectedExaminerProcs.has(procId)) {
+         // Filter selection to only those owned by sourceExId
+         const mySelectedInfos = Array.from(selectedExaminerProcs).filter(id => {
+             const ownerList = assignments[sourceExId] || [];
+             return ownerList.includes(id);
+         });
+         
+         if (mySelectedInfos.length > 1 && mySelectedInfos.includes(procId)) {
+             dragItem.current = { type: 'bulk_examiner', ids: mySelectedInfos, source: sourceExId };
+             
+             // Custom Ghost Image
+             const ghost = document.createElement('div');
+             ghost.id = 'drag-ghost-image';
+             ghost.style.position = 'absolute';
+             ghost.style.top = '-1000px';
+             ghost.style.background = '#0ea5e9'; // sky-500
+             ghost.style.color = 'white';
+             ghost.style.padding = '8px 16px';
+             ghost.style.borderRadius = '20px';
+             ghost.style.fontWeight = 'bold';
+             ghost.style.fontSize = '14px';
+             ghost.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1)';
+             ghost.style.zIndex = '9999';
+             ghost.innerText = `${mySelectedInfos.length} Prosedur`;
+             document.body.appendChild(ghost);
+             
+             e.dataTransfer.setDragImage(ghost, 0, 0);
+             e.dataTransfer.effectAllowed = 'move';
+             
+             setTimeout(() => {
+                 const g = document.getElementById('drag-ghost-image');
+                 if(g) document.body.removeChild(g);
+             }, 0);
+             return;
+         }
+    }
+
     // Bulk Drag Logic for Bank
     if (sourceExId === 'bank' && selectedBankProcs.has(procId) && selectedBankProcs.size > 1) {
          dragItem.current = { type: 'bulk_bank', ids: Array.from(selectedBankProcs), source: 'bank' };
@@ -458,10 +587,17 @@ export default function PKPApp() {
     }
 
     // Handle Bulk Drop
-    if (dragItem.current.type === 'bulk_bank') {
-        const { ids } = dragItem.current;
+    if (dragItem.current.type === 'bulk_bank' || dragItem.current.type === 'bulk_examiner') {
+        const { ids, source } = dragItem.current;
         setAssignments(prev => {
             const next = { ...prev };
+            
+            // Remove from source if distinct from target and source is not bank
+            if (source !== 'bank' && source !== targetExId && next[source]) {
+                 next[source] = next[source].filter(id => !ids.includes(id));
+            }
+
+            // Add to target
             if (targetExId !== 'bank') {
                 if (!next[targetExId]) next[targetExId] = [];
                 ids.forEach(id => {
@@ -470,7 +606,20 @@ export default function PKPApp() {
             }
             return next;
         });
-        setSelectedBankProcs(new Set()); // Clear selection on successful drop
+        
+        if (source === 'bank') {
+            setSelectedBankProcs(new Set()); 
+        } else {
+            // Clear examiner selection if move successful could be done here, 
+            // but we need to know WHICH examiner selection to clear.
+            // For now, let's clear the specific selection used.
+             setSelectedExaminerProcs(prev => {
+                 const next = new Set(prev);
+                 ids.forEach(id => next.delete(id));
+                 return next;
+             });
+        }
+        
         setLastSaved(new Date().toISOString());
         dragItem.current = null;
         return;
@@ -650,6 +799,90 @@ export default function PKPApp() {
       }));
   };
 
+  // Export Procedures to Excel
+  const handleExportProcedures = async () => {
+    try {
+        // Create Excel-compatible HTML table
+        const headers = [
+            'Jenis Laporan',
+            'Kode Akun 1',
+            'Nama Akun 1',
+            'Kode Akun 2',
+            'Nama Akun 2',
+            'Kode Akun 3',
+            'Nama Akun 3',
+            'Kode Prosedur',
+            'Uraian Prosedur',
+            'Level',
+            'Header'
+        ];
+        
+        let htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid black; padding: 5px; text-align: left; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+    </style>
+</head>
+<body>
+<table>
+    <thead>
+        <tr>
+${headers.map(h => `            <th>${h}</th>`).join('\n')}
+        </tr>
+    </thead>
+    <tbody>
+`;
+
+        procedures.forEach(proc => {
+            const isHeader = (proc.isheader === '1' || proc.isheader === 1 || proc.isheader === 'TRUE') ? 'Ya' : 'Tidak';
+            htmlContent += `        <tr>
+            <td>${proc.jenis_laporan || ''}</td>
+            <td>${proc.kode_akun_1 || ''}</td>
+            <td>${proc.nama_akun_1 || ''}</td>
+            <td>${proc.kode_akun_2 || ''}</td>
+            <td>${proc.nama_akun_2 || ''}</td>
+            <td>${proc.kode_akun_3 || ''}</td>
+            <td>${proc.nama_akun_3 || ''}</td>
+            <td>${proc.code || ''}</td>
+            <td>${(proc.name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td>
+            <td>${proc.level || ''}</td>
+            <td>${isHeader}</td>
+        </tr>
+`;
+        });
+
+        htmlContent += `    </tbody>
+</table>
+</body>
+</html>`;
+
+        // Use File System Access API to save
+        const fileName = `List Prosedur.xls`;
+        const fileHandle = await window.showSaveFilePicker({
+            suggestedName: fileName,
+            types: [{
+                description: 'Excel Spreadsheet',
+                accept: { 'application/vnd.ms-excel': ['.xls'] }
+            }]
+        });
+
+        const writable = await fileHandle.createWritable();
+        await writable.write(htmlContent);
+        await writable.close();
+
+        showAlert('Sukses', `File "${fileName}" berhasil diekspor!`, 'success');
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Export error:', error);
+            showAlert('Error', 'Gagal mengekspor file: ' + error.message, 'error');
+        }
+    }
+  };
+
   const handleSyncProcedures = async () => {
     setSyncLoading(true);
     try {
@@ -675,10 +908,9 @@ export default function PKPApp() {
   };
 
   // Import/Export
-  const performBackup = () => {
+  const performBackup = async () => {
     const data = { examiners, procedures, assignments, meta: { title: projectTitle, status: currentStatus, lastSaved: new Date().toISOString() } };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
+    const content = JSON.stringify(data, null, 2);
     
     // Generate Filename: PKP_[nama proyek]_[tahun]-[bulan]-[tanggal]_[jam][menit][detik]
     const now = new Date();
@@ -692,11 +924,37 @@ export default function PKPApp() {
     const safeTitle = projectTitle.replace(/[^a-z0-9]/gi, '_').replace(/_+/g, '_');
     const filename = `PKP_${safeTitle}_${year}-${month}-${day}_${hour}${minute}${second}.pkp`;
 
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
+    try {
+        if (window.showSaveFilePicker) {
+            const handle = await window.showSaveFilePicker({
+                suggestedName: filename,
+                types: [{
+                    description: 'PKP Project File',
+                    accept: { 'application/json': ['.pkp', '.json'] },
+                }],
+            });
+            const writable = await handle.createWritable();
+            await writable.write(content);
+            await writable.close();
+            showAlert("Sukses", "File backup berhasil disimpan.", "success");
+        } else {
+            // Fallback for browsers not supporting File System Access API
+            const blob = new Blob([content], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showAlert("Sukses", "File backup diunduh.", "success");
+        }
+    } catch (err) {
+        if (err.name !== 'AbortError') {
+            console.error(err);
+            showAlert("Gagal", "Gagal menyimpan file backup.", "error");
+        }
+    }
   };
 
   const handleLoadBackup = (e) => {
@@ -723,8 +981,145 @@ export default function PKPApp() {
   };
 
   const handlePrint = () => {
-    window.print();
+    setShowPrintTahapanModal(true);
   };
+
+    const handlePrintPKP = async (tahapan) => {
+        setShowPrintTahapanModal(false);
+        try {
+            const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+            const margin = 40;
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const contentWidth = pageWidth - margin * 2;
+
+            const colFractions = [0.08, 0.10, 0.10, 0.10, 0.35, 0.12, 0.08, 0.07];
+            const colWidths = colFractions.map(f => Math.round(f * contentWidth));
+
+            const ketuaTim = examiners.find(ex => ex.role === 'KT');
+            const ketuaSubtim = examiners.find(ex => ex.role === 'KST');
+
+            const examinerData = examiners
+                .filter(ex => ex.role !== 'KT')
+                .map(examiner => {
+                    const procIds = assignments[examiner.id] || [];
+                    const procs = procIds
+                        .map(id => procedures.find(p => p.id === id))
+                        .filter(p => p && p.tahapan === tahapan);
+                    return { examiner, procs };
+                })
+                .filter(item => item.procs.length > 0);
+
+            examinerData.forEach((item, index) => {
+                if (index > 0) doc.addPage();
+
+                const { examiner, procs } = item;
+                const roleLabel = EXAMINER_ROLES.find(r => r.key === examiner.role)?.label || examiner.role;
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(14);
+                doc.text(`PROGRAM KERJA PERORANGAN - PEMERIKSAAN ${tahapan.toUpperCase()}`, pageWidth / 2, margin, { align: 'center' });
+                doc.setFontSize(12);
+                doc.text(`${roleLabel} - ${examiner.name}`, pageWidth / 2, margin + 20, { align: 'center' });
+                doc.text(`PEMERIKSAAN ${projectTitle}`, pageWidth / 2, margin + 40, { align: 'center' });
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(10);
+                doc.text(`Total Prosedur: ${procs.length}`, margin, margin + 65);
+
+                const head = [[
+                    'Jenis Laporan', 'Akun 1', 'Akun 2', 'Akun 3', 'Prosedur', 'Waktu Pemeriksaan', 'Indeks KKP No.', 'Catatan KT'
+                ]];
+
+                const body = procs.map(p => [
+                    p.jenis_laporan || '',
+                    [(p.kode_akun_1 || ''), (p.nama_akun_1 || '')].join('\n'),
+                    [(p.kode_akun_2 || ''), (p.nama_akun_2 || '')].join('\n'),
+                    [(p.kode_akun_3 || ''), (p.nama_akun_3 || '')].join('\n'),
+                    [(p.code || ''), (p.name || '')].join('\n'),
+                    ['Rencana:', 'Realisasi:'].join('\n'),
+                    '',
+                    ''
+                ]);
+
+                autoTable(doc, {
+                    head,
+                    body,
+                    startY: margin + 80,
+                    styles: { fontSize: 8, cellPadding: 4, valign: 'top', overflow: 'linebreak' },
+                    headStyles: { fillColor: [230, 230, 230], halign: 'center', fontStyle: 'bold' },
+                    columnStyles: {
+                        0: { cellWidth: colWidths[0], halign: 'left' },
+                        1: { cellWidth: colWidths[1] },
+                        2: { cellWidth: colWidths[2] },
+                        3: { cellWidth: colWidths[3] },
+                        4: { cellWidth: colWidths[4], halign: 'left' },
+                        5: { cellWidth: colWidths[5] },
+                        6: { cellWidth: colWidths[6] },
+                        7: { cellWidth: colWidths[7] }
+                    }
+                });
+
+                let y = doc.lastAutoTable.finalY + 25;
+
+                const colW = (contentWidth - 20) / 3;
+                const x1 = margin;
+                const x2 = margin + colW + 10;
+                const x3 = margin + 2 * (colW + 10);
+                const boldItalic = () => doc.setFont('helvetica', 'bolditalic');
+                const normal = () => doc.setFont('helvetica', 'normal');
+
+                if (examiner.role === 'AT' || examiner.role === 'DKR') {
+                    doc.text('Disusun oleh', x1, y);
+                    boldItalic(); doc.text('ttd', x1, y + 18); normal();
+                    doc.text(examiner.name, x1, y + 36);
+
+                    if (ketuaSubtim) {
+                        doc.text('Direviu oleh', x2, y);
+                        boldItalic(); doc.text('ttd', x2, y + 18); normal();
+                        doc.text(ketuaSubtim.name, x2, y + 36);
+
+                        doc.text('Disetujui oleh', x3, y);
+                        boldItalic(); doc.text('ttd', x3, y + 18); normal();
+                        doc.text(ketuaTim?.name || '', x3, y + 36);
+                    } else {
+                        doc.text('Direviu dan disetujui oleh', x2, y);
+                        boldItalic(); doc.text('ttd', x2, y + 18); normal();
+                        doc.text(ketuaTim?.name || '', x2, y + 36);
+                    }
+                } else if (examiner.role === 'KST') {
+                    doc.text('Disusun oleh', x1, y);
+                    boldItalic(); doc.text('ttd', x1, y + 18); normal();
+                    doc.text(examiner.name, x1, y + 36);
+
+                    doc.text('Disetujui oleh', x3, y);
+                    boldItalic(); doc.text('ttd', x3, y + 18); normal();
+                    doc.text(ketuaTim?.name || '', x3, y + 36);
+                }
+            });
+
+            const fileName = `PKP ${projectTitle}.pdf`;
+            const pdfBytes = doc.output('arraybuffer');
+            if (window.showSaveFilePicker) {
+                try {
+                    const fileHandle = await window.showSaveFilePicker({
+                        suggestedName: fileName,
+                        types: [{ description: 'PDF Document', accept: { 'application/pdf': ['.pdf'] } }]
+                    });
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(new Blob([pdfBytes], { type: 'application/pdf' }));
+                    await writable.close();
+                    showAlert('Sukses', 'PDF berhasil disimpan.', 'success');
+                    return;
+                } catch (e) {
+                    if (e.name === 'AbortError') return;
+                }
+            }
+            doc.save(fileName);
+        } catch (error) {
+            console.error('Print error:', error);
+            showAlert('Error', 'Gagal mencetak PKP: ' + error.message, 'error');
+        }
+    };
 
   const handleBulkAssign = (examinerId) => {
     if (!examinerId || selectedBankProcs.size === 0) return;
@@ -927,124 +1322,19 @@ export default function PKPApp() {
     </div>
   );
 
-  const renderDashboard = () => {
-    const totalProc = procedures.length;
-    const activeProcs = procedures.filter(p => p.isActive !== false); // Handle undefined as true
-    const inactiveProcs = procedures.filter(p => p.isActive === false);
-    
-    const countActive = activeProcs.length;
-    const countInactive = inactiveProcs.length;
-    const pctActive = totalProc > 0 ? Math.round((countActive / totalProc) * 100) : 0;
 
-    const totalAssigned = Object.values(assignments).reduce((acc, curr) => acc + curr.length, 0);
-    // Distribution progress based on ACTIVE procedures only
-    const progress = countActive === 0 ? 0 : Math.round((totalAssigned / countActive) * 100);
-    
-    // Workload Chart Data
-    const workload = examiners.filter(ex => ex.role !== 'KST' && ex.role !== 'KT').map(ex => ({
-        name: ex.name,
-        count: assignments[ex.id] ? assignments[ex.id].length : 0
-    })).sort((a,b) => b.count - a.count);
-
-    return (
-        <div className="space-y-6 animate-in fade-in">
-            <h2 className="text-2xl font-bold text-slate-800">Dashboard Pemeriksaan</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Stats Card */}
-                <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
-                    <div>
-                        <p className="text-slate-500 font-medium text-sm uppercase tracking-wide">Status Prosedur</p>
-                        <div className="mt-4 flex items-end gap-2">
-                             <span className="text-4xl font-bold text-slate-800">{countActive}</span>
-                             <span className="text-sm text-slate-500 mb-1">Aktif</span>
-                        </div>
-                        <div className="mt-1 flex items-center gap-2 text-xs">
-                             <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">{totalProc} Total</span>
-                             <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">{countInactive} Nonaktif</span>
-                             <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full">{pctActive}% Digunakan</span>
-                        </div> 
-                    </div>
-                </div>
-
-                <div className="bg-gradient-to-br from-red-900 to-red-800 rounded-xl p-6 text-white shadow-lg">
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <p className="text-red-100 font-medium">Progress Distribusi (Aktif)</p>
-                            <h3 className="text-4xl font-bold mt-2">{progress}%</h3>
-                            <p className="text-sm text-red-100 mt-1">{totalAssigned} dari {countActive} prosedur terbagi</p>
-                        </div>
-                        <PieChart className="w-10 h-10 opacity-50" />
-                    </div>
-                    <div className="mt-4 bg-black/20 rounded-full h-2 w-full overflow-hidden">
-                        <div className="bg-white/90 h-full rounded-full transition-all duration-1000" style={{ width: `${progress}%` }}></div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <p className="text-slate-500 font-medium">Jumlah Pemeriksa</p>
-                            <h3 className="text-3xl font-bold text-slate-800 mt-2">{examiners.length}</h3>
-                        </div>
-                        <Users className="w-10 h-10 text-red-700 bg-red-50 p-2 rounded-lg" />
-                    </div>
-                    <div className="mt-4 flex gap-2">
-                        {EXAMINER_ROLES.map(r => {
-                            const count = examiners.filter(e => e.role === r.key).length;
-                            return (
-                                <div key={r.key} className={`px-2 py-1 rounded text-xs font-bold border ${r.color}`}>
-                                    {r.key}: {count}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-                    <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                        <Activity className="w-5 h-5 text-red-800" /> Beban Kerja Anggota Tim/Dukungan Pemeriksaan
-                    </h3>
-                    <div className="space-y-4">
-                        {workload.map((w, i) => (
-                            <div key={i}>
-                                <div className="flex justify-between text-sm mb-1">
-                                    <span className="font-medium text-slate-700">{w.name}</span>
-                                    <span className="text-slate-500 font-mono">{w.count} Prosedur</span>
-                                </div>
-                                <div className="w-full bg-slate-100 rounded-full h-2">
-                                    <div 
-                                        className="bg-red-700 h-2 rounded-full" 
-                                        style={{ width: `${totalProc > 0 ? (w.count / totalProc * 100) : 0}%` }}
-                                    ></div>
-                                </div>
-                            </div>
-                        ))}
-                        {workload.length === 0 && <p className="text-slate-400 italic text-sm">Belum ada data tim.</p>}
-                    </div>
-                 </div>
-
-                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col items-center justify-center text-center">
-                    <ShieldCheck className="w-16 h-16 text-slate-200 mb-4" />
-                    <h3 className="text-lg font-bold text-slate-800">Siap untuk Distribusi?</h3>
-                    <p className="text-slate-500 text-sm mb-6 max-w-xs">Gunakan menu Manajemen Distribusi untuk membagi prosedur secara visual.</p>
-                    <Button onClick={() => setActiveMenu('distribution')}>Mulai Distribusi <ChevronRight className="w-4 h-4" /></Button>
-                 </div>
-            </div>
-        </div>
-    );
-  };
 
   const renderConfiguration = () => {
     const filteredData = getFilteredProcedures();
     
-    // Summary Stats
+    // Summary Stats - Calculated for Display in Bank Prosedur (Config Procedures)
     const totalProc = procedures.length;
     const activeProcs = procedures.filter(p => p.isActive !== false);
-    const inactiveProcs = procedures.filter(p => p.isActive === false);
-    const pctActive = totalProc > 0 ? Math.round((activeProcs.length / totalProc) * 100) : 0;
+    const countActive = activeProcs.length;
+    const inactiveProcsLength = procedures.filter(p => p.isActive === false).length;
+    const interimProcsLength = activeProcs.filter(p => p.tahapan === 'Interim').length;
+    const terinciProcsLength = activeProcs.filter(p => p.tahapan !== 'Interim').length;
+    // const pctActive = totalProc > 0 ? Math.round((countActive / totalProc) * 100) : 0; // Unused variable in UI currently
 
     const TableHeader = ({ label, columnKey, width }) => {
         const isSorted = procSort.key === columnKey;
@@ -1252,6 +1542,9 @@ export default function PKPApp() {
                                 <Filter className="w-4 h-4 mr-2" /> Hapus Seluruh Filter
                             </Button>
                         )}
+                        <Button variant="outline" onClick={handleExportProcedures} className="bg-green-50 text-green-700 border-green-200 hover:bg-green-100">
+                            <Save className="w-4 h-4" /> Ekspor Seluruh Prosedur (.xls)
+                        </Button>
                         <Button variant="outline" onClick={() => setShowCloudModal(true)}>
                             <Cloud className="w-4 h-4" /> Sinkronisasi
                         </Button>
@@ -1261,6 +1554,27 @@ export default function PKPApp() {
                     </div>
                 )}
              </div>
+             
+             {activeMenu === 'config_procedures' && (
+                 <div className="grid grid-cols-4 gap-4 mb-2">
+                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
+                         <div className="text-xs text-slate-500 font-semibold uppercase">Total Prosedur</div>
+                         <div className="text-2xl font-bold text-slate-800">{totalProc}</div>
+                     </div>
+                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm relative overflow-hidden">
+                         <div className="text-xs text-slate-500 font-semibold uppercase">Prosedur Aktif</div>
+                         <div className="text-2xl font-bold text-green-600">{countActive}</div>
+                         <div className="absolute top-3 right-3 flex flex-col items-end gap-1">
+                             <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200 font-bold">Interim: {interimProcsLength}</span>
+                             <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 font-bold">Terinci: {terinciProcsLength}</span>
+                         </div>
+                     </div>
+                      <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
+                         <div className="text-xs text-slate-500 font-semibold uppercase">Prosedur Non-Aktif</div>
+                         <div className="text-2xl font-bold text-slate-400">{inactiveProcsLength}</div>
+                     </div>
+                 </div>
+             )}
 
              {activeMenu === 'config_examiners' && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1474,6 +1788,16 @@ export default function PKPApp() {
     // Only show ACTIVE procedures in distribution
     const unassigned = getUnassignedProcedures().filter(p => p.isActive !== false);
     
+    // --- STATISTICS CALCULATION ---
+    const activeProcs = procedures.filter(p => p.isActive !== false);
+    const countActive = activeProcs.length;
+    const interimProcsLength = activeProcs.filter(p => p.tahapan === 'Interim').length;
+    const terinciProcsLength = activeProcs.filter(p => !p.tahapan || p.tahapan === 'Terinci').length;
+    
+    const totalAssigned = Object.values(assignments).flat().length;
+    const progress = countActive === 0 ? 0 : Math.round((totalAssigned / countActive) * 100);
+    // ----------------------------
+    
     // Calculate counts for each tab
     const tabCounts = {
         LRA: unassigned.filter(p => p.jenis_laporan?.toUpperCase() === 'LRA').length,
@@ -1599,6 +1923,7 @@ export default function PKPApp() {
                     const getAllProcsInL1 = (l2Obj) => {
                          return Object.values(l2Obj).flatMap(l3Obj => Object.values(l3Obj).flat());
                     };
+
                     const getAllProcsInL2 = (l3Obj) => {
                          return Object.values(l3Obj).flat();
                     };
@@ -1849,7 +2174,11 @@ export default function PKPApp() {
                 {unassignedFiltered.length === 0 && (
                     <div className="text-center py-10 text-slate-400 text-xs italic">
                         {unassigned.length === 0 ? (
-                            <span>Semua prosedur telah dibagikan! <CheckCircle2 className="w-8 h-8 mx-auto mt-2 text-green-300" /></span>
+                            <div className="flex flex-col items-center">
+                                <span>Semua prosedur telah dibagikan!</span>
+                                <CheckCircle2 className="w-8 h-8 mx-auto mt-2 text-green-300" />
+                                <span className="mt-2 not-italic text-slate-500">Gunakan drag & drop pada kartu pemeriksa untuk memindahkan tugas.</span>
+                            </div>
                         ) : (
                             "Tidak ada prosedur yang sesuai pencarian."
                         )}
@@ -1859,6 +2188,9 @@ export default function PKPApp() {
         </div>
     );
 
+
+
+    // --- MAIN APP ---
     return (
         <div className="h-[calc(100vh-6rem)] flex flex-col animate-in fade-in relative">
             {/* Toolbar */}
@@ -1884,19 +2216,133 @@ export default function PKPApp() {
                         )}
                     </div>
                 </div>
-                <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => backupInputRef.current.click()}><FolderOpen className="w-4 h-4"/> Load</Button>
+                <div className="flex gap-2 items-center">
+                    {currentUser && (
+                        <>
+                            <div className="bg-gradient-to-br from-red-600 to-red-800 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm">
+                                <Users className="w-4 h-4" />
+                                <div>
+                                    <p className="font-semibold">{currentUser.nama}</p>
+                                    <p className="text-xs text-red-100">{currentUser.nip}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleLogout}
+                                className="bg-red-100 hover:bg-red-200 text-red-700 p-2 rounded-lg transition-colors"
+                                title="Logout"
+                            >
+                                <LogOut className="w-5 h-5" />
+                            </button>
+                        </>
+                    )}
+                    <Button variant="outline" onClick={() => backupInputRef.current.click()}><FolderOpen className="w-4 h-4"/> Buka Proyek</Button>
                     <input type="file" ref={backupInputRef} onChange={handleLoadBackup} className="hidden" accept=".pkp,.json" />
-                    <Button variant="outline" onClick={performBackup}><Save className="w-4 h-4 text-blue-600"/> Save</Button>
-                    <Button variant="secondary" onClick={handlePrint}><Printer className="w-4 h-4"/> Cetak Laporan</Button>
+                    <Button variant="outline" onClick={performBackup}><Save className="w-4 h-4 text-blue-600"/> Simpan Proyek</Button>
+                    <Button variant="secondary" onClick={handlePrint}><Printer className="w-4 h-4"/> Cetak PKP</Button>
                 </div>
             </div>
 
-            {/* Main Workspace Area */}
+            {/* Statistics Section / Empty State */}
+            {examiners.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 bg-white border-2 border-dashed border-slate-200 rounded-xl m-4 mt-0 animate-in fade-in">
+                    <div className="bg-slate-50 p-6 rounded-full mb-4">
+                        <AlertTriangle className="w-16 h-16 text-slate-300" />
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800 mb-2">Belum Terdapat Proyek Aktif</h3>
+                    <p className="text-slate-500 text-center max-w-md mb-6">
+                        Silakan konfigurasi pemeriksa dan prosedur pemeriksaan terlebih dahulu.
+                    </p>
+                    <div className="flex gap-3">
+                         <Button onClick={() => setActiveMenu('config_examiners')}>
+                             <Settings className="w-4 h-4" /> Tambah Pemeriksa
+                         </Button>
+                         <Button onClick={() => setActiveMenu('config_procedures')}>
+                             <Settings className="w-4 h-4" /> Kelola Prosedur
+                         </Button>
+                    </div>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4 shrink-0">
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 relative overflow-hidden lg:col-span-4">
+                         <div className="flex justify-between items-start mb-3">
+                             <h3 className="text-slate-700 font-bold flex items-center gap-2"><FileText className="w-4 h-4 text-slate-500"/> Status Prosedur</h3>
+                             <div className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded textxs font-bold">{procedures.length} Total</div>
+                         </div>
+                         <div className="grid grid-cols-2 gap-3">
+                             <div className="bg-green-50 border border-green-100 p-2 rounded-lg text-center">
+                                 <div className="text-2xl font-bold text-green-700">{countActive}</div>
+                                 <div className="text-[10px] uppercase font-bold text-green-600">Prosedur Aktif</div>
+                             </div>
+                             <div className="space-y-1">
+                                 <div className="bg-blue-50 border border-blue-100 px-2 py-1.5 rounded flex justify-between items-center">
+                                     <span className="text-[10px] font-bold text-blue-700">INTERIM</span>
+                                     <span className="text-sm font-bold text-blue-900">{interimProcsLength}</span>
+                                 </div>
+                                 <div className="bg-slate-50 border border-slate-200 px-2 py-1.5 rounded flex justify-between items-center">
+                                     <span className="text-[10px] font-bold text-slate-600">TERINCI</span>
+                                     <span className="text-sm font-bold text-slate-800">{terinciProcsLength}</span>
+                                 </div>
+                             </div>
+                         </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm lg:col-span-3">
+                        <div className="flex justify-between items-start mb-3">
+                            <h3 className="text-slate-700 font-bold flex items-center gap-2"><Users className="w-4 h-4 text-slate-500"/> Jumlah Pemeriksa</h3>
+                            <div className="bg-red-50 text-red-900 px-2 py-0.5 rounded textxs font-bold">{examiners.length} Orang</div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 content-start min-h-[60px]">
+                            {EXAMINER_ROLES.map(r => {
+                                const count = examiners.filter(e => e.role === r.key).length;
+                                if (count === 0) return null;
+                                return (
+                                    <div key={r.key} className={`px-2 py-1 rounded text-xs font-bold border flex items-center gap-1.5 ${r.color}`}>
+                                        <span>{r.label}</span>
+                                        <span className="bg-white/50 px-1.5 rounded-sm">{count}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 lg:col-span-5">
+                        <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2 text-sm">
+                            <Activity className="w-4 h-4 text-red-800" /> Beban Kerja Anggota Tim/Dukungan Pemeriksaan
+                        </h3>
+                        {/* Increased height to show ~5 items */}
+                        <div className="space-y-2 h-[100px] overflow-y-auto pr-1">
+                            {(() => {
+                                const totalProc = procedures.length;
+                                const workload = examiners.filter(ex => ex.role !== 'KST' && ex.role !== 'KT').map(ex => ({
+                                    name: ex.name,
+                                    count: assignments[ex.id] ? assignments[ex.id].length : 0
+                                })).sort((a,b) => b.count - a.count);
+                                
+                                return workload.length > 0 ? workload.map((w, i) => (
+                                    <div key={i}>
+                                        <div className="flex justify-between text-xs mb-0.5">
+                                            <span className="font-medium text-slate-700 truncate w-32" title={w.name}>{w.name}</span>
+                                            <span className="text-slate-500 font-mono ml-2">{w.count}</span>
+                                        </div>
+
+                                        <div className="w-full bg-slate-100 rounded-full h-1.5">
+                                            <div 
+                                                className="bg-red-700 h-1.5 rounded-full" 
+                                                style={{ width: `${totalProc > 0 ? (w.count / totalProc * 100) : 0}%` }}
+                                            ></div>
+                                        </div>
+                                    </div>
+                                )) : <p className="text-slate-400 italic text-xs">Belum ada data tim.</p>;
+                            })()}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Main Workspace Area (Only show if examiners exist) */}
+            {examiners.filter(ex => ex.role !== 'KST' && ex.role !== 'KT').length > 0 && (
             <div className="flex-1 flex gap-4 overflow-hidden relative">
                 
-                {/* REMOVED LEFT COLUMN */}
-
                 {/* Right: Examiners Cards (Full Width) */}
                 <div className="flex-1 overflow-y-auto overflow-x-hidden pr-2">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-20">
@@ -1906,8 +2352,8 @@ export default function PKPApp() {
                                 <div 
                                     key={ex.id}
                                     className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-[500px]"
-                                    onDragOver={(e) => e.preventDefault()}
-                                    onDrop={(e) => handleDrop(e, ex.id)}
+                                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                    onDrop={(e) => { e.stopPropagation(); handleDrop(e, ex.id); }}
                                 >
                                     {/* Card Header */}
                                     <div className="p-4 border-b border-slate-100 flex items-center gap-3 bg-white rounded-t-xl sticky top-0 z-10">
@@ -1927,14 +2373,13 @@ export default function PKPApp() {
                                         <div className="flex-1 min-w-0">
                                             <h4 className="font-bold text-slate-800 truncate">{ex.name}</h4>
                                             <div className="flex items-center gap-2 text-xs">
-                                                <span className={`px-1.5 py-0.5 rounded font-semibold border ${EXAMINER_ROLES.find(r=>r.key===ex.role)?.color}`}>{EXAMINER_ROLES.find(r=>r.key===ex.role)?.label}</span>
                                                 {ex.kstId && (
                                                     <span className="text-slate-400 bg-slate-50 px-1 rounded border border-slate-200" title="Ketua Subtim">
-                                                        KST: {(examiners.find(k => k.id === ex.kstId)?.initials || '?').slice(0, 3)}
+                                                        KST: {getInitials(examiners.find(k => k.id === ex.kstId)?.name || '?')}
                                                     </span>
                                                 )}
                                                 <span className="text-slate-400">•</span>
-                                                <span className="text-slate-500">{myProcs.length} Tugas</span>
+                                                <span className="text-slate-500">{myProcs.length} Prosedur</span>
                                             </div>
                                         </div>
                                         {myProcs.length > 0 && (
@@ -2024,12 +2469,21 @@ export default function PKPApp() {
                                                     const uniqueK1 = `${ex.id}||${k1}`;
                                                     const isL1Expanded = examinerExpandedKeys.has(uniqueK1);
                                                     const allProcsInL1 = getAllProcsInL1(l2Obj);
+                                                    
+                                                    const isL1Selected = allProcsInL1.every(p => selectedExaminerProcs.has(p.id));
+                                                    const isL1Partial = !isL1Selected && allProcsInL1.some(p => selectedExaminerProcs.has(p.id));
 
                                                     return (
-                                                        <div key={uniqueK1} className="mb-2 bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
+                                                        <div 
+                                                            key={uniqueK1} 
+                                                            className="mb-2 bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm"
+                                                            draggable
+                                                            onDragStart={(e) => handleGroupDragStart(e, allProcsInL1.map(p => p.id), ex.id)}
+                                                        >
                                                             <div 
                                                                 className="flex items-center gap-2 px-2 py-1.5 bg-slate-100 hover:bg-slate-200 cursor-pointer select-none transition-colors border-b border-slate-200"
-                                                                onClick={() => {
+                                                                onClick={(e) => {
+                                                                    // Prevent collapse when clicking checkbox (handled by stopping propagation on checkbox)
                                                                     setExaminerExpandedKeys(prev => {
                                                                         const next = new Set(prev);
                                                                         if(next.has(uniqueK1)) next.delete(uniqueK1);
@@ -2038,6 +2492,24 @@ export default function PKPApp() {
                                                                     });
                                                                 }}
                                                             >
+                                                                <input 
+                                                                    type="checkbox"
+                                                                    className="rounded border-slate-400 text-red-600 focus:ring-red-500 w-3.5 h-3.5 cursor-pointer"
+                                                                    checked={isL1Selected}
+                                                                    ref={el => { if(el) el.indeterminate = isL1Partial; }}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    onChange={(e) => {
+                                                                        const checked = e.target.checked;
+                                                                        setSelectedExaminerProcs(prev => {
+                                                                            const next = new Set(prev);
+                                                                            allProcsInL1.forEach(p => {
+                                                                                if(checked) next.add(p.id);
+                                                                                else next.delete(p.id);
+                                                                            });
+                                                                            return next;
+                                                                        });
+                                                                    }}
+                                                                />
                                                                 {isL1Expanded ? <ChevronDown size={14} className="text-slate-500" /> : <ChevronRight size={14} className="text-slate-500" />}
                                                                 <span className="text-xs font-bold text-slate-800 uppercase truncate flex-1">{k1}</span>
                                                                 <span className="text-[10px] bg-white border border-slate-300 text-slate-600 px-1.5 rounded-full">{allProcsInL1.length}</span>
@@ -2050,12 +2522,20 @@ export default function PKPApp() {
                                                                         const uniqueK2 = `${ex.id}||${k1}||${k2}`;
                                                                         const isL2Expanded = examinerExpandedKeys.has(uniqueK2);
                                                                          const allProcsInL2 = getAllProcsInL2(l3Obj);
+                                                                         
+                                                                         const isL2Selected = allProcsInL2.every(p => selectedExaminerProcs.has(p.id));
+                                                                         const isL2Partial = !isL2Selected && allProcsInL2.some(p => selectedExaminerProcs.has(p.id));
                                                                         
                                                                          return (
-                                                                            <div key={uniqueK2} className="border-l-2 border-slate-200 pl-2 ml-1">
+                                                                            <div 
+                                                                                key={uniqueK2} 
+                                                                                className="border-l-2 border-slate-200 pl-2 ml-1"
+                                                                                draggable
+                                                                                onDragStart={(e) => { e.stopPropagation(); handleGroupDragStart(e, allProcsInL2.map(p => p.id), ex.id); }}
+                                                                            >
                                                                                 <div 
                                                                                     className="flex items-center gap-2 py-1 hover:bg-slate-50 rounded px-1 cursor-pointer select-none"
-                                                                                    onClick={() => {
+                                                                                    onClick={(e) => {
                                                                                         setExaminerExpandedKeys(prev => {
                                                                                             const next = new Set(prev);
                                                                                             if(next.has(uniqueK2)) next.delete(uniqueK2);
@@ -2064,6 +2544,24 @@ export default function PKPApp() {
                                                                                         });
                                                                                     }}
                                                                                 >
+                                                                                     <input 
+                                                                                        type="checkbox"
+                                                                                        className="rounded border-slate-400 text-red-600 focus:ring-red-500 w-3 h-3 cursor-pointer"
+                                                                                        checked={isL2Selected}
+                                                                                        ref={el => { if(el) el.indeterminate = isL2Partial; }}
+                                                                                        onClick={(e) => e.stopPropagation()}
+                                                                                        onChange={(e) => {
+                                                                                            const checked = e.target.checked;
+                                                                                            setSelectedExaminerProcs(prev => {
+                                                                                                const next = new Set(prev);
+                                                                                                allProcsInL2.forEach(p => {
+                                                                                                    if(checked) next.add(p.id);
+                                                                                                    else next.delete(p.id);
+                                                                                                });
+                                                                                                return next;
+                                                                                            });
+                                                                                        }}
+                                                                                    />
                                                                                      {isL2Expanded ? <ChevronDown size={12} className="text-slate-400" /> : <ChevronRight size={12} className="text-slate-400" />}
                                                                                      <span className="text-[11px] font-semibold text-slate-700 flex-1 truncate">{k2}</span>
                                                                                      <span className="text-[9px] text-slate-400">{allProcsInL2.length}</span>
@@ -2077,7 +2575,12 @@ export default function PKPApp() {
                                                                                              const isL3Expanded = examinerExpandedKeys.has(uniqueK3);
                                                                                              
                                                                                              return (
-                                                                                                 <div key={uniqueK3} className="ml-2 pl-2 border-l border-slate-200/50">
+                                                                                                 <div 
+                                                                                                     key={uniqueK3} 
+                                                                                                     className="ml-2 pl-2 border-l border-slate-200/50"
+                                                                                                     draggable
+                                                                                                     onDragStart={(e) => { e.stopPropagation(); handleGroupDragStart(e, procs.map(p => p.id), ex.id); }}
+                                                                                                 >
                                                                                                      <div 
                                                                                                         className="flex items-center gap-1.5 py-0.5 hover:bg-slate-50 cursor-pointer select-none px-1 rounded"
                                                                                                         onClick={() => {
@@ -2091,6 +2594,7 @@ export default function PKPApp() {
                                                                                                      >
                                                                                                           {isL3Expanded ? <ChevronDown size={10} className="text-slate-300" /> : <ChevronRight size={10} className="text-slate-300" />}
                                                                                                           <span className="text-[10px] font-medium text-slate-600 flex-1 truncate">{k3}</span>
+                                                                                                          <span className="text-[8px] text-slate-400 bg-slate-100 px-1 rounded">{procs.length}</span>
                                                                                                      </div>
                                                                                                      
                                                                                                      {isL3Expanded && (
@@ -2100,8 +2604,37 @@ export default function PKPApp() {
                                                                                                                     key={proc.id}
                                                                                                                     draggable
                                                                                                                     onDragStart={(e) => handleDragStart(e, proc.id, ex.id)}
-                                                                                                                    className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm cursor-grab active:cursor-grabbing hover:border-red-400 transition-all flex gap-2 group relative"
+                                                                                                                    className={`bg-white p-2.5 rounded-lg border shadow-sm cursor-grab active:cursor-grabbing hover:border-red-400 transition-all flex gap-2 group relative ${
+                                                                                                                        selectedExaminerProcs.has(proc.id) ? 'border-red-300 bg-red-50' : 'border-slate-200'
+                                                                                                                    }`}
+                                                                                                                    onClick={() => {
+                                                                                                                        // Optional: select on click if not dragging? 
+                                                                                                                        // Just toggle selection on click for better UX
+                                                                                                                        /* setSelectedExaminerProcs(prev => {
+                                                                                                                            const next = new Set(prev);
+                                                                                                                            if(next.has(proc.id)) next.delete(proc.id);
+                                                                                                                            else next.add(proc.id);
+                                                                                                                            return next;
+                                                                                                                        }); */
+                                                                                                                    }}
                                                                                                                 >
+                                                                                                                    <div className="flex items-start pt-0.5">
+                                                                                                                        <input 
+                                                                                                                            type="checkbox"
+                                                                                                                            className="rounded border-slate-400 text-red-600 focus:ring-red-500 w-3.5 h-3.5 cursor-pointer mt-0.5"
+                                                                                                                            checked={selectedExaminerProcs.has(proc.id)}
+                                                                                                                            onClick={(e) => e.stopPropagation()}
+                                                                                                                            onChange={(e) => {
+                                                                                                                                const checked = e.target.checked;
+                                                                                                                                setSelectedExaminerProcs(prev => {
+                                                                                                                                    const next = new Set(prev);
+                                                                                                                                    if(checked) next.add(proc.id);
+                                                                                                                                    else next.delete(proc.id);
+                                                                                                                                    return next;
+                                                                                                                                });
+                                                                                                                            }}
+                                                                                                                        />
+                                                                                                                    </div>
                                                                                                                     <div className="flex-1 min-w-0">
                                                                                                                         <div className="flex flex-wrap gap-1 mb-1">
                                                                                                                             <span className="text-[9px] font-mono font-bold text-slate-500 bg-slate-100 px-1 py-0.5 rounded border border-slate-200">{proc.code}</span>
@@ -2119,9 +2652,9 @@ export default function PKPApp() {
                                                                                                                                 return next;
                                                                                                                             });
                                                                                                                         }}
-                                                                                                                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 hover:bg-rose-50 rounded text-slate-300 hover:text-rose-500 transition-all"
+                                                                                                                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 rounded text-slate-300 hover:text-red-500 transition-all"
                                                                                                                     >
-                                                                                                                        <X className="w-3 h-3" />
+                                                                                                                        <X className="w-3 h-3 text-red-500" />
                                                                                                                     </button>
                                                                                                                 </div>
                                                                                                             ))}
@@ -2148,6 +2681,8 @@ export default function PKPApp() {
                         })}
                     </div>
                 </div>
+            </div>
+          )}
 
                 {/* Floating Action Button (Bank Prosedur) - Fixed Position to ensure visibility */}
                 {!showBankModal && (
@@ -2196,12 +2731,17 @@ export default function PKPApp() {
                     </>
                 )}
 
-            </div>
         </div>
     );
   };
 
-  const renderSidebar = () => (
+  const renderSidebar = () => {
+    // Hide sidebar jika belum login
+    if (!isLoggedIn) {
+      return null;
+    }
+    
+    return (
     <div className={`bg-slate-900 text-slate-300 flex flex-col transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-20'} shrink-0 h-screen sticky top-0 print:hidden`}>
         {/* Logo Section */}
         <div className="h-16 flex items-center px-4 bg-slate-950 border-b border-slate-800 shrink-0">
@@ -2227,11 +2767,14 @@ export default function PKPApp() {
 
         {/* Menu Section */}
         <div className="flex-1 overflow-y-auto py-6 px-3 space-y-1">
+            <div className={`mb-2 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider ${!sidebarOpen && 'hidden'}`}>
+                Manajemen
+            </div>
             <MenuButton 
-                active={activeMenu === 'dashboard'} 
-                onClick={() => setActiveMenu('dashboard')} 
-                icon={<LayoutDashboard size={20} />} 
-                label="Dashboard" 
+                active={activeMenu === 'distribution'} 
+                onClick={() => setActiveMenu('distribution')} 
+                icon={<Briefcase size={20} />} 
+                label="Distribusi Prosedur" 
                 expanded={sidebarOpen}
             />
             
@@ -2252,17 +2795,6 @@ export default function PKPApp() {
                 label="Prosedur" 
                 expanded={sidebarOpen}
             />
-
-            <div className={`mt-6 mb-2 px-3 text-xs font-bold text-slate-600 uppercase tracking-wider ${!sidebarOpen && 'hidden'}`}>
-                Manajemen
-            </div>
-            <MenuButton 
-                active={activeMenu === 'distribution'} 
-                onClick={() => setActiveMenu('distribution')} 
-                icon={<Briefcase size={20} />} 
-                label="Distribusi Prosedur" 
-                expanded={sidebarOpen}
-            />
         </div>
 
         {/* Sidebar Footer */}
@@ -2279,7 +2811,96 @@ export default function PKPApp() {
             </div>
         )}
     </div>
-  );
+    );
+  };
+
+    // --- LOGIN PAGE ---
+    if (!isLoggedIn) {
+      return (
+        <div className="min-h-screen bg-white flex items-center justify-center p-4">
+          <div className="w-full max-w-sm">
+            {/* Login Card */}
+            <div className="bg-gradient-to-br from-red-700 to-red-900 rounded-2xl shadow-2xl p-8 space-y-6">
+              {/* Logo / Header */}
+              <div className="text-center mb-6">
+                <img 
+                  src="/icon.png" 
+                  alt="PKP App Logo" 
+                  className="w-16 h-16 mx-auto mb-4 rounded-lg shadow-lg"
+                />
+                <h1 className="text-3xl font-bold text-white mb-1">PKP App</h1>
+              </div>
+
+              <div className="text-center">
+                <h2 className="text-xl font-bold text-white mb-2">Masuk</h2>
+              </div>
+
+              <form onSubmit={handleLogin} className="space-y-4">
+                {/* NIP Input */}
+                <div>
+                  <label className="block text-sm font-semibold text-white mb-2">NIP BPK</label>
+                  <input
+                    type="text"
+                    placeholder="Input NIP 9 digit"
+                    value={loginNip}
+                    onChange={(e) => setLoginNip(e.target.value)}
+                    className="w-full px-4 py-2.5 border-2 border-red-300 rounded-lg focus:border-white focus:ring-2 focus:ring-red-200 transition-all outline-none text-slate-900"
+                    disabled={loginLoading}
+                  />
+                </div>
+
+                {/* Email Input */}
+                <div>
+                  <label className="block text-sm font-semibold text-white mb-2">Email BPK</label>
+                  <div className="flex items-center w-full px-4 py-2.5 border-2 border-red-300 rounded-lg bg-white focus-within:border-white focus-within:ring-2 focus-within:ring-red-200 transition-all">
+                      <input
+                        type="text"
+                        placeholder="Input email"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        className="flex-1 bg-transparent outline-none text-slate-900 placeholder:text-slate-400 min-w-0"
+                        disabled={loginLoading}
+                      />
+                      <span className="text-slate-500 font-medium ml-1 select-none">@bpk.go.id</span>
+                  </div>
+                </div>
+
+                {/* Login Button */}
+                <button
+                  type="submit"
+                  disabled={loginLoading}
+                  className="w-full bg-white text-red-800 font-semibold py-2.5 rounded-lg hover:bg-red-50 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed mt-6"
+                >
+                  {loginLoading ? (
+                    <>
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      Memvalidasi...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-5 h-5" />
+                      Masuk
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {/* Info Section */}
+              <div className="bg-white/20 border border-red-200 p-3 rounded text-center">
+                <p className="text-xs text-red-50">
+                  Data Anda akan divalidasi dari daftar karyawan BPK
+                </p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="text-center text-xs text-slate-400 mt-6">
+              <p>© 2026 Tim DAC BPK Bali</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
 
   return (
     <>
@@ -2291,6 +2912,8 @@ export default function PKPApp() {
         }
       `}</style>
 
+      {/* Debug Info: Removed */}
+
       {/* Main Container */}
       <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900 print:bg-white print:block">
           
@@ -2299,7 +2922,6 @@ export default function PKPApp() {
             {renderSidebar()}
             
             <main className="flex-1 p-8 overflow-hidden">
-                {activeMenu === 'dashboard' && renderDashboard()}
                 {(activeMenu === 'config_examiners' || activeMenu === 'config_procedures') && renderConfiguration()}
                 {activeMenu === 'distribution' && renderDistributionWorkspace()}
             </main>
@@ -2312,8 +2934,60 @@ export default function PKPApp() {
           <div className="print:hidden">
               <Modal isOpen={showExaminerModal} onClose={() => setShowExaminerModal(false)} title={editingExaminer ? 'Edit Pemeriksa' : 'Tambah Pemeriksa'}>
                   <form onSubmit={handleSaveExaminer}>
-                      <Input name="name" label="Nama Lengkap" defaultValue={editingExaminer?.name} required placeholder="Contoh: Fahmi Alfian Hasanuddin" />
-                      <Input name="nip" label="NIP BPK" defaultValue={editingExaminer?.nip} required placeholder="Contoh: 19900101..." />
+                      {/* Searchable Name Dropdown */}
+                      <div className="mb-3 relative">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Nama</label>
+                        <div className="relative">
+                            <input 
+                                className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                                name="name"
+                                required 
+                                placeholder="Cari Nama Pegawai..." 
+                                value={examinerNameSearch}
+                                onChange={(e) => {
+                                    setExaminerNameSearch(e.target.value);
+                                    setIsExaminerDropdownOpen(true);
+                                }}
+                                onFocus={() => setIsExaminerDropdownOpen(true)}
+                                autoComplete="off"
+                            />
+                            {isExaminerDropdownOpen && examinerNameSearch && (
+                                <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                    {userList.filter(u => u.nama.toLowerCase().includes(examinerNameSearch.toLowerCase())).map((u, idx) => (
+                                        <div 
+                                            key={idx}
+                                            className="px-3 py-2 hover:bg-slate-50 cursor-pointer text-sm"
+                                            onClick={() => {
+                                                setExaminerNameSearch(u.nama);
+                                                setExaminerNipValue(u.nip);
+                                                setIsExaminerDropdownOpen(false);
+                                            }}
+                                        >
+                                            <div className="font-semibold text-slate-800">{u.nama}</div>
+                                            <div className="text-xs text-slate-500">{u.nip}</div>
+                                        </div>
+                                    ))}
+                                    {userList.filter(u => u.nama.toLowerCase().includes(examinerNameSearch.toLowerCase())).length === 0 && (
+                                        <div className="px-3 py-2 text-sm text-slate-400">Tidak ditemukan</div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                      </div>
+
+                      {/* Read-only NIP */}
+                      <div className="mb-3">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">NIP BPK</label>
+                        <input
+                          className="w-full border border-slate-300 rounded px-3 py-2 text-sm bg-red-50 text-slate-600 focus:outline-none cursor-not-allowed"
+                          name="nip"
+                          value={examinerNipValue}
+                          readOnly
+                          required
+                          placeholder="Otomatis terisi..."
+                          title="NIP terisi otomatis berdasarkan nama yang dipilih"
+                        />
+                      </div>
                       
                       {/* State untuk menghandle perubahan role dr form agar dropdown KST tampil dinamis */}
                       <ExaminerFormFields editingExaminer={editingExaminer} examiners={examiners} />
@@ -2417,6 +3091,23 @@ export default function PKPApp() {
                               {syncLoading ? 'Sedang Sinkronisasi...' : 'Mulai Sinkronisasi'}
                           </Button>
                           <Button variant="ghost" onClick={() => setShowCloudModal(false)} disabled={syncLoading}>Batal</Button>
+                      </div>
+                  </div>
+              </Modal>
+              
+              <Modal isOpen={showPrintTahapanModal} onClose={() => setShowPrintTahapanModal(false)} title="Pilih Tahapan PKP">
+                  <div className="space-y-4">
+                      <p className="text-sm text-slate-600">Pilih tahapan pemeriksaan untuk dicetak:</p>
+                      <div className="flex gap-3">
+                          <Button onClick={() => handlePrintPKP('Interim')} className="flex-1">
+                              <FileText className="w-4 h-4" /> Interim
+                          </Button>
+                          <Button onClick={() => handlePrintPKP('Terinci')} className="flex-1">
+                              <FileText className="w-4 h-4" /> Terinci
+                          </Button>
+                      </div>
+                      <div className="flex justify-end mt-4">
+                          <Button variant="ghost" onClick={() => setShowPrintTahapanModal(false)}>Batal</Button>
                       </div>
                   </div>
               </Modal>
