@@ -258,6 +258,7 @@ export default function PKPApp() {
 
   // Expand/Collapse State
   const [expandedKeys, setExpandedKeys] = useState(new Set());
+  const [examinerExpandedKeys, setExaminerExpandedKeys] = useState(new Set());
 
   // Drag and Drop Refs
   const dragItem = useRef(null); // { type: 'procedure', id: procId }
@@ -369,6 +370,44 @@ export default function PKPApp() {
             });
         }
     });
+  };
+
+  const handleGroupDragStart = (e, procIds, sourceExId = 'bank') => {
+    const ids = Array.isArray(procIds) ? procIds : Array.from(procIds);
+    if (ids.length === 0) {
+        e.preventDefault();
+        return;
+    }
+
+    dragItem.current = { type: 'bulk_bank', ids: ids, source: sourceExId };
+    
+    // Custom Ghost Image
+    const ghost = document.createElement('div');
+    ghost.id = 'drag-ghost-image';
+    ghost.style.position = 'absolute';
+    ghost.style.top = '-1000px';
+    ghost.style.background = '#ef4444'; // red-500
+    ghost.style.color = 'white';
+    ghost.style.padding = '8px 16px';
+    ghost.style.borderRadius = '20px';
+    ghost.style.fontWeight = 'bold';
+    ghost.style.fontSize = '14px';
+    ghost.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1)';
+    ghost.style.zIndex = '9999';
+    ghost.innerText = `${ids.length} Prosedur`;
+    document.body.appendChild(ghost);
+    
+    e.dataTransfer.setDragImage(ghost, 0, 0);
+    e.dataTransfer.effectAllowed = 'copyMove';
+    
+    setTimeout(() => {
+        const g = document.getElementById('drag-ghost-image');
+        if(g) document.body.removeChild(g);
+    }, 0);
+
+    if (sourceExId === 'bank') {
+         setTimeout(() => setShowBankModal(false), 50);
+    }
   };
 
   // DnD Logic
@@ -1497,7 +1536,11 @@ export default function PKPApp() {
                 </div>
 
                 {selectedBankProcs.size > 0 && (
-                        <div className="bg-blue-50 p-2 rounded border border-blue-100 flex justify-between items-center animate-in fade-in slide-in-from-top-1">
+                        <div 
+                            draggable
+                            onDragStart={(e) => handleGroupDragStart(e, selectedBankProcs)}
+                            className="bg-blue-50 p-2 rounded border border-blue-100 flex justify-between items-center animate-in fade-in slide-in-from-top-1 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
+                        >
                             <span className="text-[10px] font-bold text-blue-800 flex items-center gap-1">
                                 <GripVertical className="w-3 h-3" />
                                 {selectedBankProcs.size} item siap ditarik (Drag & Drop)
@@ -1529,25 +1572,6 @@ export default function PKPApp() {
                 onDrop={(e) => handleDrop(e, 'bank')}
             >
                 {(() => {
-                    const hierarchy = {};
-                    unassignedFiltered.forEach(proc => {
-                        const l1 = proc.nama_akun_1 || 'Lainnya';
-                        const l2 = proc.nama_akun_2 || 'Lainnya';
-                        if(!hierarchy[l1]) hierarchy[l1] = {};
-                        if(!hierarchy[l1][l2]) hierarchy[l1][l2] = [];
-                        hierarchy[l1][l2].push(proc);
-                    });
-
-                    // Utility to find the earliest code in a group of procedures
-                    const getMinCode = (procs) => {
-                        if (!procs || procs.length === 0) return '';
-                        return procs.reduce((min, p) => {
-                            if (!min) return p.code;
-                            return p.code.localeCompare(min, undefined, { numeric: true }) < 0 ? p.code : min;
-                        }, null);
-                    };
-
-
                     // Use Akun 3 as Level 3. If null/empty, group under "Prosedur"
                     const hierarchy = {};
                     unassignedFiltered.forEach(proc => {
@@ -1607,8 +1631,12 @@ export default function PKPApp() {
 
                         return (
                             <div key={k1} className="mb-2">
-                                <div className="flex items-center gap-2 bg-slate-200/80 px-2 py-1.5 border-y border-slate-300 sticky top-0 z-20 backdrop-blur-sm">
-                                        <button 
+                                <div 
+                                    draggable
+                                    onDragStart={(e) => handleGroupDragStart(e, allProcsInL1.map(p => p.id))}
+                                    className="flex items-center gap-2 bg-slate-200/80 px-2 py-1.5 border-y border-slate-300 sticky top-0 z-20 backdrop-blur-sm cursor-grab active:cursor-grabbing hover:bg-slate-300 transition-colors"
+                                >
+                                        <button  
                                         onClick={() => {
                                             setExpandedKeys(prev => {
                                                 const next = new Set(prev);
@@ -1665,7 +1693,11 @@ export default function PKPApp() {
                                             
                                             return (
                                                 <div key={uniqueK2}>
-                                                    <div className="flex items-center gap-2 py-1 px-1 hover:bg-slate-100 rounded">
+                                                    <div 
+                                                        draggable
+                                                        onDragStart={(e) => handleGroupDragStart(e, allProcsInL2.map(p => p.id))}
+                                                        className="flex items-center gap-2 py-1 px-1 hover:bg-slate-100 rounded cursor-grab active:cursor-grabbing hover:shadow-sm"
+                                                    >
                                                         <button 
                                                             onClick={() => {
                                                                 setExpandedKeys(prev => {
@@ -1715,7 +1747,11 @@ export default function PKPApp() {
 
                                                                 return (
                                                                     <div key={uniqueK3} className="border-l border-slate-200/60 pl-2">
-                                                                         <div className="flex items-center gap-2 py-0.5 px-1 hover:bg-slate-50 rounded">
+                                                                         <div 
+                                                                            draggable
+                                                                            onDragStart={(e) => handleGroupDragStart(e, procs.map(p => p.id))}
+                                                                            className="flex items-center gap-2 py-0.5 px-1 hover:bg-slate-50 rounded cursor-grab active:cursor-grabbing hover:shadow-sm"
+                                                                         >
                                                                             <button 
                                                                                 onClick={() => {
                                                                                     setExpandedKeys(prev => {
@@ -1798,84 +1834,6 @@ export default function PKPApp() {
                                                                     </div>
                                                                 );
                                                             })}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    });/* END MAP */ 
-                                                            type="checkbox"
-                                                            className="rounded border-slate-300 text-red-600 focus:ring-red-500 w-3.5 h-3.5 cursor-pointer"
-                                                            checked={isL2Selected}
-                                                            ref={el => { if(el) el.indeterminate = isL2Partial; }}
-                                                            onChange={(e) => {
-                                                                const newSet = new Set(selectedBankProcs);
-                                                                if(e.target.checked) procs.forEach(p => newSet.add(p.id));
-                                                                else procs.forEach(p => newSet.delete(p.id));
-                                                                setSelectedBankProcs(newSet);
-                                                            }}
-                                                        />
-                                                        <span className="text-xs font-semibold text-slate-700 truncate cursor-pointer select-none" 
-                                                            onClick={() => {
-                                                                setExpandedKeys(prev => {
-                                                                    const next = new Set(prev);
-                                                                    if(next.has(uniqueK2)) next.delete(uniqueK2);
-                                                                    else next.add(uniqueK2);
-                                                                    return next;
-                                                                });
-                                                            }}
-                                                        >{k2}</span>
-                                                        <span className="text-[9px] text-slate-400 bg-slate-100 px-1 rounded">{procs.length}</span>
-                                                    </div>
-
-                                                    {isL2Expanded && (
-                                                        <div className="pl-6 space-y-2 mt-1 mb-2">
-                                                            {procs.map(proc => (
-                                                                <div 
-                                                                    key={proc.id}
-                                                                    draggable
-                                                                    onDragStart={(e) => {
-                                                                        // Custom behavior: Close modal shortly after drag starts
-                                                                        // Use setTimeout so the drag operation registers first
-                                                                        setTimeout(() => setShowBankModal(false), 50);
-                                                                        handleDragStart(e, proc.id, 'bank');
-                                                                    }}
-                                                                    className={`bg-white p-2.5 rounded-lg border shadow-sm transition-all group flex gap-3 items-start ${selectedBankProcs.has(proc.id) ? 'border-red-500 ring-1 ring-red-500 bg-red-50/30' : 'border-slate-200 hover:border-red-300'} ${proc.isActive === false ? 'opacity-60 bg-slate-50' : ''}`}
-                                                                >
-                                                                    <input 
-                                                                        type="checkbox" 
-                                                                        className="mt-1 rounded border-slate-300 text-red-600 focus:ring-red-500 w-3.5 h-3.5 cursor-pointer"
-                                                                        checked={selectedBankProcs.has(proc.id)}
-                                                                        onChange={() => {
-                                                                            setSelectedBankProcs(prev => {
-                                                                                const next = new Set(prev);
-                                                                                if(next.has(proc.id)) next.delete(proc.id);
-                                                                                else next.add(proc.id);
-                                                                                return next;
-                                                                            });
-                                                                        }}
-                                                                    />
-                                                                    <div className="flex-1 cursor-grab active:cursor-grabbing min-w-0">
-                                                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                                                            <span className="bg-slate-100 text-slate-600 text-[9px] font-mono font-bold px-1 py-0.5 rounded">{proc.code}</span>
-                                                                            {proc.nama_akun_3 && (
-                                                                                <span className="bg-purple-100 text-purple-700 text-[9px] font-semibold px-1 py-0.5 rounded border border-slate-100 uppercase tracking-tight">{proc.nama_akun_3}</span>
-                                                                            )}
-                                                                            {(proc.tahapan === 'Interim') && (
-                                                                                    <span className="bg-blue-100 text-blue-700 text-[9px] font-bold px-1 py-0.5 rounded border border-blue-200">INTERIM</span>
-                                                                            )}
-                                                                            {proc.isActive === false && (
-                                                                                <span className="bg-slate-200 text-slate-500 text-[9px] font-bold px-1 py-0.5 rounded border border-slate-300 flex items-center gap-0.5"><Power size={8}/> OFF</span>
-                                                                            )}
-                                                                        </div>
-                                                                        <p className="text-xs text-slate-700 line-clamp-3 leading-snug">{proc.name}</p>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
                                                         </div>
                                                     )}
                                                 </div>
@@ -2013,39 +1971,176 @@ export default function PKPApp() {
                                                 <span className="text-xs font-medium">Drop prosedur disini</span>
                                             </div>
                                         ) : (
-                                            myProcs.map((pid, idx) => {
-                                                const proc = procedures.find(p => p.id === pid);
-                                                if (!proc) return null;
-                                                return (
-                                                    <div 
-                                                        key={pid}
-                                                        draggable
-                                                        onDragStart={(e) => handleDragStart(e, pid, ex.id)}
-                                                        className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm cursor-grab active:cursor-grabbing hover:border-red-400 transition-all flex gap-2 group"
-                                                    >
-                                                        <div className="text-[10px] font-bold text-slate-400 mt-0.5 w-4">{idx+1}.</div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex justify-between items-start mb-0.5">
-                                                                <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-1 rounded">{proc.code}</span>
+                                            (() => {
+                                                const assignedProcs = procedures.filter(p => myProcs.includes(p.id));
+                                                
+                                                // Grouping Logic
+                                                const hierarchy = {};
+                                                assignedProcs.forEach(proc => {
+                                                    const l1 = proc.nama_akun_1 || 'Lainnya';
+                                                    const l2 = proc.nama_akun_2 || 'Lainnya';
+                                                    const l3 = proc.nama_akun_3 || 'Rincian Prosedur';
+                                                    
+                                                    if(!hierarchy[l1]) hierarchy[l1] = {};
+                                                    if(!hierarchy[l1][l2]) hierarchy[l1][l2] = {};
+                                                    if(!hierarchy[l1][l2][l3]) hierarchy[l1][l2][l3] = [];
+                                                    
+                                                    hierarchy[l1][l2][l3].push(proc);
+                                                });
+                                                
+                                                const getMinCode = (procs) => {
+                                                    if (!procs || procs.length === 0) return '';
+                                                    return procs.reduce((min, p) => {
+                                                        if (!min) return p.code;
+                                                        return p.code.localeCompare(min, undefined, { numeric: true }) < 0 ? p.code : min;
+                                                    }, null);
+                                                };
+
+                                                 const getAllProcsInL1 = (l2Obj) => {
+                                                     return Object.values(l2Obj).flatMap(l3Obj => Object.values(l3Obj).flat());
+                                                };
+                                                 const getAllProcsInL2 = (l3Obj) => {
+                                                     return Object.values(l3Obj).flat();
+                                                };
+
+                                                const l1Keys = Object.keys(hierarchy).sort((a, b) => {
+                                                    const procsA = getAllProcsInL1(hierarchy[a]);
+                                                    const codeA = getMinCode(procsA);
+                                                    const procsB = getAllProcsInL1(hierarchy[b]);
+                                                    const codeB = getMinCode(procsB);
+                                                    return codeA.localeCompare(codeB, undefined, { numeric: true });
+                                                });
+                                                
+                                                return l1Keys.map(k1 => {
+                                                    const l2Obj = hierarchy[k1];
+                                                    const l2Keys = Object.keys(l2Obj).sort((a, b) => {
+                                                         const procsA = getAllProcsInL2(l2Obj[a]);
+                                                         const procsB = getAllProcsInL2(l2Obj[b]);
+                                                         const codeA = getMinCode(procsA);
+                                                         const codeB = getMinCode(procsB);
+                                                         return codeA.localeCompare(codeB, undefined, { numeric: true });
+                                                    });
+                                                    
+                                                    const uniqueK1 = `${ex.id}||${k1}`;
+                                                    const isL1Expanded = examinerExpandedKeys.has(uniqueK1);
+                                                    const allProcsInL1 = getAllProcsInL1(l2Obj);
+
+                                                    return (
+                                                        <div key={uniqueK1} className="mb-2 bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
+                                                            <div 
+                                                                className="flex items-center gap-2 px-2 py-1.5 bg-slate-100 hover:bg-slate-200 cursor-pointer select-none transition-colors border-b border-slate-200"
+                                                                onClick={() => {
+                                                                    setExaminerExpandedKeys(prev => {
+                                                                        const next = new Set(prev);
+                                                                        if(next.has(uniqueK1)) next.delete(uniqueK1);
+                                                                        else next.add(uniqueK1);
+                                                                        return next;
+                                                                    });
+                                                                }}
+                                                            >
+                                                                {isL1Expanded ? <ChevronDown size={14} className="text-slate-500" /> : <ChevronRight size={14} className="text-slate-500" />}
+                                                                <span className="text-xs font-bold text-slate-800 uppercase truncate flex-1">{k1}</span>
+                                                                <span className="text-[10px] bg-white border border-slate-300 text-slate-600 px-1.5 rounded-full">{allProcsInL1.length}</span>
                                                             </div>
-                                                            <p className="text-xs text-slate-700 leading-snug">{proc.name}</p>
+                                                            
+                                                            {isL1Expanded && (
+                                                                <div className="p-2 space-y-2">
+                                                                    {l2Keys.map(k2 => {
+                                                                        const l3Obj = l2Obj[k2];
+                                                                        const uniqueK2 = `${ex.id}||${k1}||${k2}`;
+                                                                        const isL2Expanded = examinerExpandedKeys.has(uniqueK2);
+                                                                         const allProcsInL2 = getAllProcsInL2(l3Obj);
+                                                                        
+                                                                         return (
+                                                                            <div key={uniqueK2} className="border-l-2 border-slate-200 pl-2 ml-1">
+                                                                                <div 
+                                                                                    className="flex items-center gap-2 py-1 hover:bg-slate-50 rounded px-1 cursor-pointer select-none"
+                                                                                    onClick={() => {
+                                                                                        setExaminerExpandedKeys(prev => {
+                                                                                            const next = new Set(prev);
+                                                                                            if(next.has(uniqueK2)) next.delete(uniqueK2);
+                                                                                            else next.add(uniqueK2);
+                                                                                            return next;
+                                                                                        });
+                                                                                    }}
+                                                                                >
+                                                                                     {isL2Expanded ? <ChevronDown size={12} className="text-slate-400" /> : <ChevronRight size={12} className="text-slate-400" />}
+                                                                                     <span className="text-[11px] font-semibold text-slate-700 flex-1 truncate">{k2}</span>
+                                                                                     <span className="text-[9px] text-slate-400">{allProcsInL2.length}</span>
+                                                                                </div>
+                                                                                
+                                                                                {isL2Expanded && (
+                                                                                     <div className="space-y-1 mt-1">
+                                                                                         {Object.keys(l3Obj).sort().map(k3 => {
+                                                                                             const procs = l3Obj[k3].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+                                                                                             const uniqueK3 = `${ex.id}||${k1}||${k2}||${k3}`;
+                                                                                             const isL3Expanded = examinerExpandedKeys.has(uniqueK3);
+                                                                                             
+                                                                                             return (
+                                                                                                 <div key={uniqueK3} className="ml-2 pl-2 border-l border-slate-200/50">
+                                                                                                     <div 
+                                                                                                        className="flex items-center gap-1.5 py-0.5 hover:bg-slate-50 cursor-pointer select-none px-1 rounded"
+                                                                                                        onClick={() => {
+                                                                                                            setExaminerExpandedKeys(prev => {
+                                                                                                                const next = new Set(prev);
+                                                                                                                if(next.has(uniqueK3)) next.delete(uniqueK3);
+                                                                                                                else next.add(uniqueK3);
+                                                                                                                return next;
+                                                                                                            });
+                                                                                                        }}
+                                                                                                     >
+                                                                                                          {isL3Expanded ? <ChevronDown size={10} className="text-slate-300" /> : <ChevronRight size={10} className="text-slate-300" />}
+                                                                                                          <span className="text-[10px] font-medium text-slate-600 flex-1 truncate">{k3}</span>
+                                                                                                     </div>
+                                                                                                     
+                                                                                                     {isL3Expanded && (
+                                                                                                         <div className="space-y-1.5 mt-1">
+                                                                                                            {procs.map(proc => (
+                                                                                                                <div 
+                                                                                                                    key={proc.id}
+                                                                                                                    draggable
+                                                                                                                    onDragStart={(e) => handleDragStart(e, proc.id, ex.id)}
+                                                                                                                    className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm cursor-grab active:cursor-grabbing hover:border-red-400 transition-all flex gap-2 group relative"
+                                                                                                                >
+                                                                                                                    <div className="flex-1 min-w-0">
+                                                                                                                        <div className="flex flex-wrap gap-1 mb-1">
+                                                                                                                            <span className="text-[9px] font-mono font-bold text-slate-500 bg-slate-100 px-1 py-0.5 rounded border border-slate-200">{proc.code}</span>
+                                                                                                                            {proc.tahapan === 'Interim' && (
+                                                                                                                                 <span className="bg-blue-50 text-blue-600 text-[9px] px-1 py-0.5 rounded border border-blue-100">Interim</span>
+                                                                                                                            )}
+                                                                                                                        </div>
+                                                                                                                        <p className="text-[11px] text-slate-700 leading-snug">{proc.name}</p>
+                                                                                                                    </div>
+                                                                                                                    <button 
+                                                                                                                        onClick={() => {
+                                                                                                                            setAssignments(prev => {
+                                                                                                                                const next = {...prev};
+                                                                                                                                next[ex.id] = next[ex.id].filter(id => id !== proc.id);
+                                                                                                                                return next;
+                                                                                                                            });
+                                                                                                                        }}
+                                                                                                                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 hover:bg-rose-50 rounded text-slate-300 hover:text-rose-500 transition-all"
+                                                                                                                    >
+                                                                                                                        <X className="w-3 h-3" />
+                                                                                                                    </button>
+                                                                                                                </div>
+                                                                                                            ))}
+                                                                                                         </div>
+                                                                                                     )}
+                                                                                                 </div>
+                                                                                             )
+                                                                                         })}
+                                                                                     </div>
+                                                                                )}
+                                                                            </div>
+                                                                         )
+                                                                    })}
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                        <button 
-                                                            onClick={() => {
-                                                                // Return to bank logic manually
-                                                                setAssignments(prev => {
-                                                                    const next = {...prev};
-                                                                    next[ex.id] = next[ex.id].filter(id => id !== pid);
-                                                                    return next;
-                                                                });
-                                                            }}
-                                                            className="opacity-0 group-hover:opacity-100 self-start text-slate-300 hover:text-rose-500 transition-opacity"
-                                                        >
-                                                            <X className="w-3 h-3" />
-                                                        </button>
-                                                    </div>
-                                                );
-                                            })
+                                                    )
+                                                })
+                                            })()
                                         )}
                                     </div>
                                 </div>
